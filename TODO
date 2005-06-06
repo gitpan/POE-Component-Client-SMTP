@@ -1,0 +1,13 @@
+* piping support thru sendmail binary
+
+* freeze the interface
+
+* add support for CC and BCC fields
+
+* add MIME support
+
+* add support for custom user inserted fields (like X-Whatever)
+
+If you feel like needing one of these features, you may contact me.
+
+Patches (for bugfixes or enhancements) are more than welcome.

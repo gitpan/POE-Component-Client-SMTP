@@ -1,5 +1,11 @@
 Revision history for POE-Component-Client-SMTP
 
+0.02    June-02-2005/00:00
+	* Output in debug mode is a little bit more readable
+        * Added SMTP "Timeout" facility
+        * Added tests for the module
+        * "cleaned" up the module inside, meaning that most of the SMTP server
+        codes have their own handler
+
 0.01    May-23-2005/17:00
         First version, released on an unsuspecting world.
-
