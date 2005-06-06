@@ -7,7 +7,6 @@ META.yml
 README
 t/00-prereq.t
 t/05-load.t
-t/07-isa.t
 t/10-send.pl
 t/10-send.t
 t/15-non_ehlo.t

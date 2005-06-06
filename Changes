@@ -1,5 +1,8 @@
 Revision history for POE-Component-Client-SMTP
 
+0.03    June-06-2005/00:00
+        * removed t/07-isa.t
+
 0.02    June-02-2005/00:00
 	* Output in debug mode is a little bit more readable
         * Added SMTP "Timeout" facility

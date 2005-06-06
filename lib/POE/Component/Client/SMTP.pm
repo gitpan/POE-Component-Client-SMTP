@@ -12,7 +12,7 @@ use POE qw(Wheel::SocketFactory Wheel::ReadWrite);
 # RFC2821 http://www.faqs.org/rfcs/rfc2821.html obsoletes
 # RFC821 http://www.faqs.org/rfcs/rfc821.html
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 # octal
 my $EOL = "\015\012";
