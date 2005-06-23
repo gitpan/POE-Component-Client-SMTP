@@ -5,14 +5,15 @@ use strict;
 
 use Carp;
 use Socket;
-use POE qw(Wheel::SocketFactory Wheel::ReadWrite);
+use Data::Dumper;
+use POE qw(Wheel::SocketFactory Wheel::ReadWrite Filter::Stream);
 
 # references:
 # RFC822 http://www.faqs.org/rfcs/rfc822.html
 # RFC2821 http://www.faqs.org/rfcs/rfc2821.html obsoletes
 # RFC821 http://www.faqs.org/rfcs/rfc821.html
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 # octal
 my $EOL = "\015\012";
@@ -22,8 +23,8 @@ sub send {
 
     my ( $class, $sender, %params, $alias );
     my (
-        $smtp_sender, $smtp_recipient, $smtp_server,
-        $smtp_port,     $smtp_data, $to,           $from, $subject,
+        $smtp_sender, $smtp_recipient, $smtp_server, $smtp_ehlo,
+        $smtp_port,     $smtp_body, $smtp_data,    $to, $from, $subject,
         $cc,            $bcc,       $smtp_timeout, $debug,
         $success_event, $failure_event,
 
@@ -37,13 +38,13 @@ sub send {
     # track of where we are (obviously when receiving a 250 code from server)
     my @session_state;
 
-    # this array contains "lines" of the email message
-    # (don't want to send it all on the wire, but chunks of the message, then let
-    # POE::Kernel give time to other "threads"
+   # this array contains "lines" of the email message
+   # (don't want to send it all on the wire, but chunks of the message, then let
+   # POE::Kernel give time to other "threads"
     my @mail_body;
 
-    # my class name 
-    $class  = shift;
+    # my class name
+    $class = shift;
 
     # caller, so we know where to send back the SMTP session results
     $sender = $poe_kernel->get_active_session();
@@ -80,46 +81,65 @@ sub send {
     # SMTP SERVER
     $smtp_server = delete $params{'smtp_server'} || 'localhost';
 
+    # SMTP EHLO
+    $smtp_ehlo = delete $params{'smtp_ehlo'} || 'localhost';
+
     # SMTP PORT
     $smtp_port = delete $params{'smtp_port'} || 25;
 
-    # SMTP DATA
-    $smtp_data = delete $params{'smtp_data'}
-      || "i've just forgot to write DATA!";
+    if ( defined( $params{'smtp_body'} ) ) {
 
-    if ( ref($smtp_data) eq 'SCALAR' ) {
-        for my $eol ( $EOL, "\r\n", "\n", "\r", ) {
-            @mail_body = split /$eol/, $$smtp_data;
-            last if ( $#mail_body > 0 );
+        # SMTP DATA
+        $smtp_body = delete $params{'smtp_body'}
+          || "i've just forgot to write DATA!";
+
+        if ( ref($smtp_body) eq 'SCALAR' ) {
+            my @tmp = split /\r\n/, $$smtp_body;
+            for ( 0 .. $#tmp ) {
+                push @mail_body, split /\r|\n/, $tmp[$_];
+            }
         }
-    }
-    elsif ( ref($smtp_data) eq 'ARRAY' ) {
-        @mail_body = @{$smtp_data};
+        elsif ( ref($smtp_body) eq 'ARRAY' ) {
+            @mail_body = @{$smtp_body};
+        }
+        else {
+            croak
+              "$class->send requires \$smtp_body to be a scalar or array ref";
+        }
+
+        # TO:
+        if ( defined( $params{'to'} ) ) {
+            $to = delete $params{'to'};
+            $to .= " <$smtp_recipient>";
+        }
+        else {
+            $to = $smtp_recipient;
+        }
+
+        # FROM:
+        if ( defined( $params{'from'} ) ) {
+            $from = delete $params{'from'};
+            $from .= " <$smtp_sender>";
+        }
+        else {
+            $from = $smtp_sender;
+        }
+
+        # SUBJECT:
+        $subject = delete $params{'subject'} || "(none)";
+
+        $smtp_state{'354'} =
+          _add_mail_headers( \@mail_body, $to, $from, $subject );
     }
     else {
-        croak "$class->send requires \$smtp_data to be a scalar or array ref";
+        $smtp_data = delete $params{'smtp_data'};
+        my @tmp = split /\r\n/, $$smtp_data;
+        for ( 0 .. $#tmp ) {
+            push @mail_body, split /\r|\n/, $tmp[$_];
+        }
+        push @mail_body, ".";
+        $smtp_state{'354'} = \@mail_body;
     }
-
-    # TO:
-    if ( defined( $params{'to'} ) ) {
-        $to = delete $params{'to'};
-        $to .= " <$smtp_recipient>";
-    }
-    else {
-        $to = $smtp_recipient;
-    }
-
-    # FROM:
-    if ( defined( $params{'from'} ) ) {
-        $from = delete $params{'from'};
-        $from .= " <$smtp_sender>";
-    }
-    else {
-        $from = $smtp_sender;
-    }
-
-    # SUBJECT:
-    $subject = delete $params{'subject'} || "(none)";
 
     # EVENTS
     if ( !defined( $params{'SMTPSendSuccessEvent'} ) ) {
@@ -141,15 +161,16 @@ sub send {
     $debug = delete $params{'debug'} || 0;
 
     # ASSEMBLE SMTP STATES
-    $smtp_state{'220'}         = "EHLO $class";
+    $smtp_state{'220'}         = "EHLO $smtp_ehlo";
     $smtp_state{'554'}         = 'QUIT';
     $smtp_state{'250'}{'ehlo'} = "MAIL FROM: <$smtp_sender>";
     $smtp_state{'500'}         = $smtp_state{'501'} = $smtp_state{'502'} =
-      "HELO $class";
+      "HELO $smtp_ehlo";
     $smtp_state{'250'}{'mail_from'} = "RCPT TO: <$smtp_recipient>";
     $smtp_state{'551'} = $smtp_state{'550'} = 'QUIT';
     $smtp_state{'250'}{'rcpt_to'} = $smtp_state{'251'} = "DATA";
-    $smtp_state{'354'} = _add_mail_headers( \@mail_body, $to, $from, $subject );
+
+#    $smtp_state{'354'} = _add_mail_headers( \@mail_body, $to, $from, $subject );
     $smtp_state{'250'}{'data'} = "QUIT";
     $smtp_state{'221'} = "";    # the server ends connection
 
@@ -175,7 +196,7 @@ sub send {
             smtp_session_error => \&_smtp_session_error,
             smtp_timeout_event => \&_smtp_timeout_handler,
 
-	    # SMTP events as sent by server here
+            # SMTP events as sent by server here
             event_220 => \&_handler_220,
             event_250 => \&_handler_250,
             event_251 => \&_handler_251,
@@ -205,13 +226,13 @@ sub send {
             smtp_state    => \%smtp_state,
             session_state => \@session_state,
 
-	    # error codes as documented in the docs
-	    # if there are discrepancies between what's below and the docs, THIS IS A BUG!
+  # error codes as documented in the docs
+  # if there are discrepancies between what's below and the docs, THIS IS A BUG!
             error_codes => {
                 smtp_talk_error    => 1,
                 smtp_connect_error => 2,
                 smtp_session_error => 3,
-		smtp_timeout => 4,
+                smtp_timeout       => 4,
             },
         },
     );
@@ -237,10 +258,11 @@ sub _client_start {
     $kernel->alias_set( $heap->{'alias'} );
 
     # set alarm too
-    $heap->{'alarm'} = $kernel->delay_set( "smtp_timeout_event", $heap->{'smtp_timeout'} );
+    $heap->{'alarm'} =
+      $kernel->delay_set( "smtp_timeout_event", $heap->{'smtp_timeout'} );
 }
 
-# smtp_connect_success 
+# smtp_connect_success
 # SocketFactory got connected, cool
 sub _smtp_connect_success {
 
@@ -248,10 +270,11 @@ sub _smtp_connect_success {
     my ( $kernel, $heap, $socket ) = @_[ KERNEL, HEAP, ARG0 ];
 
     $heap->{'wheels'}->{'rw'} = POE::Wheel::ReadWrite->new(
-        Handle     => $socket,
-        Filter     => POE::Filter::Line->new(),
-        InputEvent => 'smtp_session_input',
-        ErrorEvent => 'smtp_session_error',
+        Handle       => $socket,
+        InputFilter  => POE::Filter::Line->new( Literal => $EOL ),
+        OutputFilter => POE::Filter::Stream->new(),
+        InputEvent   => 'smtp_session_input',
+        ErrorEvent   => 'smtp_session_error',
     );
 }
 
@@ -272,10 +295,10 @@ sub _smtp_connect_error {
 sub _smtp_timeout_handler {
     my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
     $kernel->post(
-	$heap->{'sender'},
-	$heap->{'smtp_failure'},
-	$heap->{'error_codes'}->{'smtp_timeout'},
-	shift @{ $heap->{'session_state'} }
+        $heap->{'sender'},
+        $heap->{'smtp_failure'},
+        $heap->{'error_codes'}->{'smtp_timeout'},
+        shift @{ $heap->{'session_state'} }
     );
     _smtp_component_destroy();
 }
@@ -283,7 +306,7 @@ sub _smtp_timeout_handler {
 # smtp_session_input event
 # this routine parses what SMTP server says (line by line) and dispatches the appropiate
 # event to be handled by a routine dedicated to that speciffic SMTP server response
-# Server responses should like this: "XXX optional text hereEOL" or 
+# Server responses should like this: "XXX optional text hereEOL" or
 #                                    "XXX-optional text hereEOL" in case of EHLO command;
 # this way the server advertises its ESMTP capabilities
 
@@ -302,11 +325,13 @@ sub _smtp_session_input {
         # nothing
     }
     else {
+
         # here nothing should go
-	if ($heap->{'debug'}){
-	    warn "SMTP Server sent us a message we can't parse, is the server RFC compliant?!";
-	    warn "Here's what server said: \"$input\"";
-	}
+        if ( $heap->{'debug'} ) {
+            warn
+"SMTP Server sent us a message we can't parse, is the server RFC compliant?!";
+            warn "Here's what server said: \"$input\"";
+        }
     }
 
 }
@@ -318,20 +343,35 @@ sub _handler_250 {
     my $state = shift @{ $heap->{'session_state'} };
     $heap->{'debug'}
       and warn "SENDING TO SERVER   : " . $heap->{'smtp_state'}{$code}{$state};
-    $heap->{'wheels'}->{'rw'}->put( $heap->{'smtp_state'}{$code}{$state} );
+    $heap->{'wheels'}->{'rw'}
+      ->put( $heap->{'smtp_state'}{$code}{$state} . $EOL );
 }
 
 # handle SMTP command, DATA
 sub _handler_354 {
     my ( $kernel, $heap, $code, $message ) = @_[ KERNEL, HEAP, ARG0, ARG1 ];
+    my $line;
 
-    # extract another line to be put on the wire
-    my $line = shift @{ $heap->{'smtp_state'}{$code} };
+    if ( ref( $heap->{'smtp_state'}{$code} ) eq 'ARRAY' ) {
+
+        # extract another line to be put on the wire
+        $line = shift @{ $heap->{'smtp_state'}{$code} };
+    }
+    else {
+        if ( defined( $heap->{'smtp_state'}{$code} ) ) {
+            $line = ${ $heap->{'smtp_state'}{$code} };
+
+            #	    $line =~ s/\r|\n/$EOL/;
+            $line .= "$EOL.";
+        }
+
+        $heap->{'smtp_state'}{$code} = undef;
+    }
 
     $kernel->delay_adjust( $heap->{'alarm'}, $heap->{'smtp_timeout'} );
     if ( defined($line) ) {
         $heap->{'debug'} and warn "SENDING TO SERVER   : $line";
-        $heap->{'wheels'}->{'rw'}->put($line);
+        $heap->{'wheels'}->{'rw'}->put( $line . "$EOL" );
         $kernel->yield( "send_more", $code, $message );
     }
 }
@@ -341,7 +381,7 @@ sub _handler_221 {
 
     $kernel->delay_adjust( $heap->{'alarm'}, $heap->{'smtp_timeout'} );
     if ( exists( $heap->{'error'} ) ) {
-	$heap->{'debug'} and warn "Closing connection to server, error";
+        $heap->{'debug'} and warn "Closing connection to server, error";
         $kernel->post(
             $heap->{'sender'},
             $heap->{'smtp_failure'},
@@ -351,7 +391,7 @@ sub _handler_221 {
         );
     }
     else {
-	$heap->{'debug'} and warn "closing connection";
+        $heap->{'debug'} and warn "closing connection";
         $kernel->post( $heap->{'sender'}, $heap->{'smtp_success'}, );
     }
     _smtp_component_destroy();
@@ -376,16 +416,18 @@ sub _handler_220 {
 
     $kernel->delay_adjust( $heap->{'alarm'}, $heap->{'smtp_timeout'} );
     shift @{ $heap->{'session_state'} };
-    $heap->{'debug'} and warn "SENDING TO SERVER   : " . $heap->{'smtp_state'}{$code};
-    $heap->{'wheels'}->{'rw'}->put( $heap->{'smtp_state'}{$code} );
+    $heap->{'debug'}
+      and warn "SENDING TO SERVER   : " . $heap->{'smtp_state'}{$code};
+    $heap->{'wheels'}->{'rw'}->put( $heap->{'smtp_state'}{$code} . "$EOL" );
 }
 
 sub _handler_non_ehlo {
     my ( $kernel, $heap, $code, $message ) = @_[ KERNEL, HEAP, ARG0, ARG1 ];
 
     $kernel->delay_adjust( $heap->{'alarm'}, $heap->{'smtp_timeout'} );
-    $heap->{'debug'} and warn "SENDING TO SERVER   : " . $heap->{'smtp_state'}{$code};
-    $heap->{'wheels'}->{'rw'}->put( $heap->{'smtp_state'}{$code} );
+    $heap->{'debug'}
+      and warn "SENDING TO SERVER   : " . $heap->{'smtp_state'}{$code};
+    $heap->{'wheels'}->{'rw'}->put( $heap->{'smtp_state'}{$code} . "$EOL" );
 }
 
 sub _handler_error_code {
@@ -394,7 +436,7 @@ sub _handler_error_code {
     my ( $kernel, $heap, $code, $message ) = @_[ KERNEL, HEAP, ARG0, ARG1 ];
 
     $kernel->alarm_remove( $heap->{'alarm'} );
-    $heap->{'wheels'}->{'rw'}->put('QUIT');
+    $heap->{'wheels'}->{'rw'}->put( 'QUIT' . "$EOL" );
     $heap->{'error'}{'error_code'}    = $code;
     $heap->{'error'}{'error_message'} = $message;
 }
@@ -403,7 +445,7 @@ sub _handler_error_code {
 sub _smtp_session_error {
     my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
     my @sf = @_[ ARG0 .. ARG3 ];
-    
+
     $heap->{'debug'} and warn "Wheel returned an error";
     $kernel->alarm_remove( $heap->{'alarm'} );
 
@@ -472,7 +514,7 @@ POE::Component::Client::SMTP - Sending emails using POE
 
 =head1 VERSION
 
-Version 0.02
+Version 0.04
 
 =head1 SYNOPSIS
 
@@ -480,16 +522,9 @@ Version 0.02
 
     POE::Component::Client::SMTP->send(
         alias               => 'smtp_client',
-        smtp_server         => 'foo.bar.com',   # default localhost
-        smtp_port           => 25,              # default 25
         smtp_sender         => 'foo@bar.com',   # will croak if emtpy
         smtp_recipient      => 'foo@baz.com',   # will croak if empty
-        to                  =>  "Foo Baz",      # defaults to smtp_recipient
-        from                =>  "Foo Bar",      # defaults to smtp_sender
-        cc                  => ['a@foo.bar', 'b@foo.bar'],  # not implemented yet
-        bcc                 => ['bcc1@bar.foo', 'bcc2@bar.foo'],    # not implemented yet
-        subject             => "Hi Foo!"        # defaults to "(none)"
-        smtp_data           =>  $ref_to_data,
+        smtp_data           =>  $ref_to_scalar,
         smtp_timeout        => 30,              # seconds, defaults to 30
         debug               => 1,               # defaults to 0
         SMTPSendSuccessEvent => $success_event,
@@ -519,6 +554,10 @@ The component's alias
 =item smtp_server
 
 SMTP server address; defaults to B<localhost>
+
+=item smtp_ehlo
+
+Message to be appended to the EHLO/HELO command; defaults to 'localhost'
 
 =item smtp_port
 
@@ -552,9 +591,17 @@ Not implemented yet;
 
 The subject of the message
 
-=item smtp_data
+=item smtp_body
 
 The body of the message; must be a ref to a scalar or an array.
+
+=item smtp_data
+
+Scalar ref to the entire message, constructed outside the module; i.e. using a helper module like Email::MIME::Creator or MIME::Lite
+
+Using this parameter results in ignoring POE::Component::Client::SMTP's parameters: I<to, from, subject>
+
+B<Note:> that your POE program will block during the MIME creation.
 
 =item SMTPSendSuccessEvent
 
@@ -631,13 +678,84 @@ If running in debug mode, you will receive not only the last line received from 
 
 =back
 
-=head1 Note
+=head1 Examples
 
-Note that I<SMTPSendSuccessEvent> and I<SMTPSendFailureEvent> are relative to what the SMTP server tells us; even if the SMTP server accepts the message fo
-r delivery, it is not guaranteed that the message actually gets delivered. In case an error occurs after the SMTP server accepted the message, an error message will be sent back to the sender.
+ # Send an email, having an attachments
 
-=head1 EXAMPLE
+ my $mail_body = create_message();
 
+ POE::Session->create(
+     inline_states => {
+         _start       => \&start,
+         send_mail    => \&send_mail,
+         smtp_success => \&smtp_success,
+         smtp_error   => \&smtp_error,
+         _stop        => \&stop,
+     },
+     heap => { smtp_data => \$mail_body, },
+ );
+ 
+ POE::Kernel->run();
+ 
+ sub start {
+     $_[KERNEL]->yield("send_mail");
+ }
+ 
+ sub send_mail {
+     POE::Component::Client::SMTP->send(
+         alias          => 'smtp_client',
+         smtp_server    => $server,
+         smtp_port      => $port,
+         smtp_sender    => $sender,
+         smtp_recipient => $recipient,
+         smtp_data      => $_[HEAP]->{'smtp_data'},
+         smtp_timeout   => 10,
+         debug          => 2,
+ 
+         SMTPSendSuccessEvent => "smtp_success",
+         SMTPSendFailureEvent => "smtp_error",
+     );
+ }
+
+ sub create_message {
+     my @parts;
+     my $email;
+     my $message;
+ 
+     @parts = (
+         Email::MIME->create(
+             attributes => {
+                 content_type => "text/plain",
+                 disposition  => "attachment",
+                 charset      => "US-ASCII",
+             },
+             body => "Hello there!",
+         ),
+ 
+         Email::MIME->create(
+             attributes => {
+                 filename     => 'picture.jpg',
+                 content_type => "image/jpg",
+                 encoding     => "quoted-printable",
+                 name         => "Nokia.jpg",
+             },
+             # BLOCKING!
+             body => io('picture.jpg')->all,
+         ),
+     );
+ 
+     $email = Email::MIME->create(
+         header => [ From => 'ultradm@cpan.org' ],
+         parts  => [@parts],
+         charset => "UTF-8",
+     );
+     $email->header_set('Date' => 'Thu, 23 Jun 2005 8:18:35 GMT');
+ 
+     return $email->as_string;
+ 
+ }
+
+ # No use of external modules
  ...
 
  POE::Session->create(
@@ -666,7 +784,7 @@ r delivery, it is not guaranteed that the message actually gets delivered. In ca
     from		=> "My Name Here",
     to                  => "The Girls's Name",
     subject             => "I've just did your homework",
-    smtp_data           =>  \$data,
+    smtp_body           =>  \$data,
     SMTPSendSuccessEvent => 'SMTP_Send_Success_Event',
     SMTPSendFailureEvent => 'SMTP_Send_Failure_Event',
  );
@@ -694,6 +812,12 @@ r delivery, it is not guaranteed that the message actually gets delivered. In ca
     }
  } 
 
+=head1 Note
+
+Note that I<SMTPSendSuccessEvent> and I<SMTPSendFailureEvent> are relative to what the SMTP server tells us; even if the SMTP server accepts the message fo
+r delivery, it is not guaranteed that the message actually gets delivered. In case an error occurs after the SMTP server accepted the message, an error mes
+sage will be sent back to the sender.
+
 =head1 BUGS
 
 * Beware that the interface can be changed in the future!
@@ -710,11 +834,19 @@ Values given to send() are minimally checked.
 
 The module assumes that the given I<smtp_server> is a relay or the target server. This doesn't conform to the RFC 2821.
 
+The MIME creation is left to an external module of your own choice. This means that the process will block until the attachment(s) is (are) slurped from the disk.
+
 =head1 ACKNOWLEDGEMENTS
+
+Thanks to Mike Schroeder for giving me some good ideas about PoCoClSMTP enhancements.
 
 =head1 TODO
 
 See the TODO file in the distribution.
+
+=head1 Changes
+
+See the Changes file in the distribution.
 
 =head1 SEE ALSO
 
@@ -724,7 +856,7 @@ RFC 2821
 
 =head1 AUTHOR
 
-George Nistorica, C<< <george@nistorica.ro> >>
+George Nistorica, C<< ultradm@cpan.org >>
 
 =head1 COPYRIGHT & LICENSE
 

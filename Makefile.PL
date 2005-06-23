@@ -4,7 +4,7 @@ use ExtUtils::MakeMaker;
 
 WriteMakefile(
     NAME                => 'POE::Component::Client::SMTP',
-    AUTHOR              => 'George Nistorica <george@nistorica.ro>',
+    AUTHOR              => 'George Nistorica <ultradm@cpan.org>',
     VERSION_FROM        => 'lib/POE/Component/Client/SMTP.pm',
     ABSTRACT_FROM       => 'lib/POE/Component/Client/SMTP.pm',
     PL_FILES            => {},

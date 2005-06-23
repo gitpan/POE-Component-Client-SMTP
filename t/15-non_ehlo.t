@@ -61,7 +61,7 @@ POE::Session->create(
         smtp_error   => \&client_smtp_error,
         _stop        => \&client_stop,
     },
-    heap => { smtp_data => \$mail_body, },
+    heap => { smtp_body => \$mail_body, },
 );
 
 POE::Kernel->run();
@@ -105,6 +105,12 @@ sub handle_client_error {
 sub handle_client_flush {
 }
 
+sub error_handler {
+    my ($syscall_name, $error_number, $error_string) = @_[ARG0, ARG1, ARG2];
+    diag("Error spawning POE::Component::Server::TCP, syscall: $syscall_name, err_no: $error_number, err_string: $error_string");
+}
+
+
 sub client_start {
     $_[KERNEL]->yield("send_mail");
 }
@@ -120,7 +126,7 @@ sub client_send_mail {
         to             => "George",
         from           => "Georgel",
         subject        => "Hi Foo!",
-        smtp_data      => $_[HEAP]->{'smtp_data'},
+        smtp_body      => $_[HEAP]->{'smtp_body'},
         smtp_timeout   => 1,
         debug          => 0,
 

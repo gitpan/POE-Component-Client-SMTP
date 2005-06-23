@@ -73,7 +73,7 @@ POE::Session->create(
         smtp_error   => \&client_smtp_error,
         _stop        => \&client_stop,
     },
-    heap => { smtp_data => \$mail_body,},
+    heap => { smtp_body => \$mail_body,},
 );
 
 POE::Kernel->run();
@@ -116,7 +116,7 @@ sub client_send_mail {
         to             => "George",
         from           => "Georgel",
         subject        => "Hi Foo!",
-        smtp_data      => $_[HEAP]->{'smtp_data'},
+        smtp_body      => $_[HEAP]->{'smtp_body'},
         smtp_timeout   => 1,
         debug          => 0,
 

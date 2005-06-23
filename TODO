@@ -1,12 +1,15 @@
+* optionally set an event name that is emmited periodically by
+PoCoClSMTP indicating how much of the message has been sent
+
 * piping support thru sendmail binary
 
 * freeze the interface
 
 * add support for CC and BCC fields
 
-* add MIME support
+* add (internal, POEish) MIME support
 
-* add support for custom user inserted fields (like X-Whatever)
+* remove tests dependency on POE::Component::Server::TCP
 
 If you feel like needing one of these features, you may contact me.
 

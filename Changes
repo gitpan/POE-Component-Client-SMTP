@@ -1,5 +1,16 @@
 Revision history for POE-Component-Client-SMTP
 
+0.04	June-20-2005
+	* added a new parameter for the send() method, smtp_body instead
+	of smtp_data
+	* smtp_data is mutually exclusive with any parameter that may 
+	alter the message's header; this means that you either send a
+	simple message assembled by POE::Component::Client::SMTP using
+	smtp_body or you construct the entire message elsewhere and 
+	pass it to the smtp_data parameter
+	* added smtp_ehlo so that the user may control what PoCoClSMTP
+	sends in response of server greeting
+
 0.03    June-06-2005/00:00
         * removed t/07-isa.t
 

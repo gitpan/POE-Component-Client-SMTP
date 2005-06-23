@@ -13,12 +13,11 @@ use Test::More tests => 1;
 
 my $success   = 0;
 my $mail_body =
-" Ce faci bro' ? iar ai uitat de mine?".
-"Hai! la munca!!!!";
+  "Ce faci bro' ? iar ai uitat de mine?\n" . "Hai! \r\n\la munca!!!!\n";
 
-my $sender    = 'george.nistorica@avira.com';
-my $recipient = 'george.nistorica@avira.com';
-my $server    = 'mail.avira.local';
+my $sender    = 'george@localhost';
+my $recipient = 'george@localhost';
+my $server    = 'localhost';
 my $port      = 25;
 
 POE::Session->create(
@@ -29,7 +28,7 @@ POE::Session->create(
         smtp_error   => \&smtp_error,
         _stop        => \&stop,
     },
-    heap => { smtp_data => \$mail_body, },
+    heap => { smtp_body => \$mail_body, },
 );
 
 POE::Kernel->run();
@@ -55,7 +54,7 @@ sub send_mail {
         to             => "Cos",
         from           => "Crony",
         subject        => "brrr, iar stai degeaba?!",
-        smtp_data      => $_[HEAP]->{'smtp_data'},
+        smtp_body      => $_[HEAP]->{'smtp_body'},
         smtp_timeout   => 1,
         debug          => 2,
 
@@ -71,18 +70,22 @@ sub smtp_success {
 
 sub smtp_error {
     warn "eroare";
-    my ($err_type, $operation, $errnum, $errstr ) = @_[ARG0 .. ARG4];
+    my ( $err_type, $operation, $errnum, $errstr ) = @_[ ARG0 .. ARG4 ];
     warn "er: $err_type";
     my $heap = $_[HEAP];
-    if ($err_type == 2){
-	$success = 1;
-	warn "Could not connect to: $server:$port, error: $errnum, $errstr while $operation";
-    }else{
-	warn "Could not connect to: $server:$port, error: $errnum, $errstr while $operation";
-	$success = 0;
+    if ( $err_type == 2 ) {
+        $success = 1;
+        warn
+"Could not connect to: $server:$port, error: $errnum, $errstr while $operation";
+    }
+    else {
+        warn
+"Could not connect to: $server:$port, error: $errnum, $errstr while $operation";
+        $success = 0;
     }
 }
 
 sub stop {
-    is( $success, 1, "Sending mail:from $sender, to $recipient, trough $server" );
+    is( $success, 1,
+        "Sending mail:from $sender, to $recipient, trough $server" );
 }

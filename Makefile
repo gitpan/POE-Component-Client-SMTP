@@ -11,7 +11,7 @@
 #   MakeMaker Parameters:
 
 #     ABSTRACT_FROM => q[lib/POE/Component/Client/SMTP.pm]
-#     AUTHOR => q[George Nistorica <george@nistorica.ro>]
+#     AUTHOR => q[George Nistorica <ultradm@cpan.org>]
 #     NAME => q[POE::Component::Client::SMTP]
 #     PL_FILES => {  }
 #     PREREQ_PM => { Test::More=>q[0], POE=>q[0.25] }
@@ -56,11 +56,11 @@ AR_STATIC_ARGS = cr
 DIRFILESEP = /
 NAME = POE::Component::Client::SMTP
 NAME_SYM = POE_Component_Client_SMTP
-VERSION = 0.03
+VERSION = 0.04
 VERSION_MACRO = VERSION
-VERSION_SYM = 0_03
+VERSION_SYM = 0_04
 DEFINE_VERSION = -D$(VERSION_MACRO)=\"$(VERSION)\"
-XS_VERSION = 0.03
+XS_VERSION = 0.04
 XS_VERSION_MACRO = XS_VERSION
 XS_DEFINE_VERSION = -D$(XS_VERSION_MACRO)=\"$(XS_VERSION)\"
 INST_ARCHLIB = blib/arch
@@ -241,7 +241,7 @@ RCS_LABEL = rcs -Nv$(VERSION_SYM): -q
 DIST_CP = best
 DIST_DEFAULT = tardist
 DISTNAME = POE-Component-Client-SMTP
-DISTVNAME = POE-Component-Client-SMTP-0.03
+DISTVNAME = POE-Component-Client-SMTP-0.04
 
 
 # --- MakeMaker macro section:
@@ -415,7 +415,7 @@ metafile :
 	$(NOECHO) $(ECHO) '# http://module-build.sourceforge.net/META-spec.html' > META_new.yml
 	$(NOECHO) $(ECHO) '#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#' >> META_new.yml
 	$(NOECHO) $(ECHO) 'name:         POE-Component-Client-SMTP' >> META_new.yml
-	$(NOECHO) $(ECHO) 'version:      0.03' >> META_new.yml
+	$(NOECHO) $(ECHO) 'version:      0.04' >> META_new.yml
 	$(NOECHO) $(ECHO) 'version_from: lib/POE/Component/Client/SMTP.pm' >> META_new.yml
 	$(NOECHO) $(ECHO) 'installdirs:  site' >> META_new.yml
 	$(NOECHO) $(ECHO) 'requires:' >> META_new.yml
@@ -697,10 +697,10 @@ testdb_static :: testdb_dynamic
 # --- MakeMaker ppd section:
 # Creates a PPD (Perl Package Description) for a binary distribution.
 ppd:
-	$(NOECHO) $(ECHO) '<SOFTPKG NAME="$(DISTNAME)" VERSION="0,03,0,0">' > $(DISTNAME).ppd
+	$(NOECHO) $(ECHO) '<SOFTPKG NAME="$(DISTNAME)" VERSION="0,04,0,0">' > $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '    <TITLE>$(DISTNAME)</TITLE>' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '    <ABSTRACT>Sending emails using POE</ABSTRACT>' >> $(DISTNAME).ppd
-	$(NOECHO) $(ECHO) '    <AUTHOR>George Nistorica &lt;george@nistorica.ro&gt;</AUTHOR>' >> $(DISTNAME).ppd
+	$(NOECHO) $(ECHO) '    <AUTHOR>George Nistorica &lt;ultradm@cpan.org&gt;</AUTHOR>' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '    <IMPLEMENTATION>' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <DEPENDENCY NAME="POE" VERSION="0,25,0,0" />' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '        <DEPENDENCY NAME="Test-More" VERSION="0,0,0,0" />' >> $(DISTNAME).ppd
