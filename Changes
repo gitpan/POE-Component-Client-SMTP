@@ -1,5 +1,9 @@
 Revision history for POE-Component-Client-SMTP
 
+0.05	June-23-2005
+	* added smtp_bind_address parameter to ->send();
+	it is passed to SocketFactory's constructor as BindAddress
+
 0.04	June-20-2005
 	* added a new parameter for the send() method, smtp_body instead
 	of smtp_data

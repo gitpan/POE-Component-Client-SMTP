@@ -1,3 +1,10 @@
+* add ->spawn() wrapper around ->send(), together with 'shutdown' event
+this makes it possible to hold a single POE::Component::Client::SMTP
+around, for sending more than one message per session;
+
+* add an argument to the SMTPSuccessEvent that contains the message
+that has been transmited; arguably useful.
+
 * optionally set an event name that is emmited periodically by
 PoCoClSMTP indicating how much of the message has been sent
 

@@ -13,6 +13,7 @@ t/10-send.t
 t/15-non_ehlo.t
 t/20-smtp_timeout.t
 t/25-smtp_timeout.t
+t/30-send_bind_add.t
 t/90-pod-coverage.t
 t/95-pod.t
 TODO

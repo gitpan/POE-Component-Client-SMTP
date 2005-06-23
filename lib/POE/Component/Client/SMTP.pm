@@ -13,7 +13,7 @@ use POE qw(Wheel::SocketFactory Wheel::ReadWrite Filter::Stream);
 # RFC2821 http://www.faqs.org/rfcs/rfc2821.html obsoletes
 # RFC821 http://www.faqs.org/rfcs/rfc821.html
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 # octal
 my $EOL = "\015\012";
@@ -24,7 +24,7 @@ sub send {
     my ( $class, $sender, %params, $alias );
     my (
         $smtp_sender, $smtp_recipient, $smtp_server, $smtp_ehlo,
-        $smtp_port,     $smtp_body, $smtp_data,    $to, $from, $subject,
+        $smtp_port,$smtp_bind_address,     $smtp_body, $smtp_data,    $to, $from, $subject,
         $cc,            $bcc,       $smtp_timeout, $debug,
         $success_event, $failure_event,
 
@@ -86,6 +86,8 @@ sub send {
 
     # SMTP PORT
     $smtp_port = delete $params{'smtp_port'} || 25;
+
+    $smtp_bind_address = delete $params{'smtp_bind_address'};
 
     if ( defined( $params{'smtp_body'} ) ) {
 
@@ -219,6 +221,7 @@ sub send {
             sender        => $sender,          # SENDER
             smtp_server   => $smtp_server,     # SMTP Server we connect to
             smtp_port     => $smtp_port,       # SMTP Port
+	    smtp_bind_address => $smtp_bind_address, # Address to bind
             smtp_timeout  => $smtp_timeout,
             debug         => $debug,
             smtp_success  => $success_event,   # Event to send back upon success
@@ -242,8 +245,7 @@ sub send {
 # client start
 sub _client_start {
     my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
-
-    $heap->{'wheels'}->{'sf'} = POE::Wheel::SocketFactory->new(
+    my %sf = (
         RemoteAddress  => $heap->{'smtp_server'},
         RemotePort     => $heap->{'smtp_port'},
         SuccessEvent   => "smtp_connect_success",
@@ -252,6 +254,11 @@ sub _client_start {
         SocketType     => SOCK_STREAM,
         SocketProtocol => 'tcp',
         Reuse          => 'yes',
+    );
+    $sf{'BindAddress'} = $heap->{'smtp_bind_address'} if ( defined( $heap->{'smtp_bind_address'} ) );
+
+    $heap->{'wheels'}->{'sf'} = POE::Wheel::SocketFactory->new(
+	%sf,
     );
 
     # set alias
@@ -514,7 +521,7 @@ POE::Component::Client::SMTP - Sending emails using POE
 
 =head1 VERSION
 
-Version 0.04
+Version 0.05
 
 =head1 SYNOPSIS
 
@@ -562,6 +569,10 @@ Message to be appended to the EHLO/HELO command; defaults to 'localhost'
 =item smtp_port
 
 SMTP server port; defaults to B<25>
+
+=item smtp_bind_address
+
+Parameter to be passed to POE::Wheel::SocketFactory as the BindAdress attribute.
 
 =item smtp_sender
 

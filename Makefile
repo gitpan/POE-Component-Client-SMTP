@@ -56,11 +56,11 @@ AR_STATIC_ARGS = cr
 DIRFILESEP = /
 NAME = POE::Component::Client::SMTP
 NAME_SYM = POE_Component_Client_SMTP
-VERSION = 0.04
+VERSION = 0.05
 VERSION_MACRO = VERSION
-VERSION_SYM = 0_04
+VERSION_SYM = 0_05
 DEFINE_VERSION = -D$(VERSION_MACRO)=\"$(VERSION)\"
-XS_VERSION = 0.04
+XS_VERSION = 0.05
 XS_VERSION_MACRO = XS_VERSION
 XS_DEFINE_VERSION = -D$(XS_VERSION_MACRO)=\"$(XS_VERSION)\"
 INST_ARCHLIB = blib/arch
@@ -241,7 +241,7 @@ RCS_LABEL = rcs -Nv$(VERSION_SYM): -q
 DIST_CP = best
 DIST_DEFAULT = tardist
 DISTNAME = POE-Component-Client-SMTP
-DISTVNAME = POE-Component-Client-SMTP-0.04
+DISTVNAME = POE-Component-Client-SMTP-0.05
 
 
 # --- MakeMaker macro section:
@@ -415,7 +415,7 @@ metafile :
 	$(NOECHO) $(ECHO) '# http://module-build.sourceforge.net/META-spec.html' > META_new.yml
 	$(NOECHO) $(ECHO) '#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#' >> META_new.yml
 	$(NOECHO) $(ECHO) 'name:         POE-Component-Client-SMTP' >> META_new.yml
-	$(NOECHO) $(ECHO) 'version:      0.04' >> META_new.yml
+	$(NOECHO) $(ECHO) 'version:      0.05' >> META_new.yml
 	$(NOECHO) $(ECHO) 'version_from: lib/POE/Component/Client/SMTP.pm' >> META_new.yml
 	$(NOECHO) $(ECHO) 'installdirs:  site' >> META_new.yml
 	$(NOECHO) $(ECHO) 'requires:' >> META_new.yml
@@ -697,7 +697,7 @@ testdb_static :: testdb_dynamic
 # --- MakeMaker ppd section:
 # Creates a PPD (Perl Package Description) for a binary distribution.
 ppd:
-	$(NOECHO) $(ECHO) '<SOFTPKG NAME="$(DISTNAME)" VERSION="0,04,0,0">' > $(DISTNAME).ppd
+	$(NOECHO) $(ECHO) '<SOFTPKG NAME="$(DISTNAME)" VERSION="0,05,0,0">' > $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '    <TITLE>$(DISTNAME)</TITLE>' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '    <ABSTRACT>Sending emails using POE</ABSTRACT>' >> $(DISTNAME).ppd
 	$(NOECHO) $(ECHO) '    <AUTHOR>George Nistorica &lt;ultradm@cpan.org&gt;</AUTHOR>' >> $(DISTNAME).ppd
