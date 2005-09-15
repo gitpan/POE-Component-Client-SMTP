@@ -1,5 +1,9 @@
 Revision history for POE-Component-Client-SMTP
 
+0.06	September-15-2005
+	* made the alias of the component optional
+	(Contributor: Chris Williams aka BinGOs)
+
 0.05	June-23-2005
 	* added smtp_bind_address parameter to ->send();
 	it is passed to SocketFactory's constructor as BindAddress

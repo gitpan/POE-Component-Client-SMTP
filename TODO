@@ -20,4 +20,5 @@ PoCoClSMTP indicating how much of the message has been sent
 
 If you feel like needing one of these features, you may contact me.
 
-Patches (for bugfixes or enhancements) are more than welcome.
+Patches in unified form (diff -u) (for bugfixes or enhancements) are
+more than welcome.

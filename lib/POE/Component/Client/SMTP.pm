@@ -13,7 +13,7 @@ use POE qw(Wheel::SocketFactory Wheel::ReadWrite Filter::Stream);
 # RFC2821 http://www.faqs.org/rfcs/rfc2821.html obsoletes
 # RFC821 http://www.faqs.org/rfcs/rfc821.html
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 # octal
 my $EOL = "\015\012";
@@ -55,10 +55,6 @@ sub send {
     # parameters initialization
 
     # ALIAS
-    if ( !defined( $params{'alias'} ) ) {
-        croak
-"$class->send requires alias; please refer to $class's pod for details";
-    }
 
     $alias = delete $params{'alias'};
 
@@ -262,11 +258,16 @@ sub _client_start {
     );
 
     # set alias
-    $kernel->alias_set( $heap->{'alias'} );
+    if ( $heap->{'alias'} ) {
+        $kernel->alias_set( $heap->{'alias'} );
+    } else {
+	$kernel->refcount_increment( $kernel->get_active_session()->ID() => __PACKAGE__ );
+    }
 
     # set alarm too
     $heap->{'alarm'} =
       $kernel->delay_set( "smtp_timeout_event", $heap->{'smtp_timeout'} );
+    $heap->{'sessid'} = $kernel->get_active_session()->ID();
 }
 
 # smtp_connect_success
@@ -323,8 +324,8 @@ sub _smtp_session_input {
 
     $kernel->delay_adjust( $heap->{'alarm'}, $heap->{'smtp_timeout'} );
     if ( $input =~ /^(\d{3})\s+(.*)$/ ) {
-        $heap->{'debug'} and warn "RECEIVED FROM SERVER: $input";
-        $heap->{'debug'} and warn "DISPATCH EVENT      : $1";
+        $heap->{'debug'} and warn "PoCoClSMTP: $heap->{'sessid'} RECEIVED FROM SERVER: $input";
+        $heap->{'debug'} and warn "PoCoClSMTP: $heap->{'sessid'} DISPATCH EVENT      : $1";
         $kernel->yield( "event_$1", $1, $2 );
     }
     elsif ( $input =~ /^(\d{3})\-(.*)$/ ) {
@@ -336,7 +337,7 @@ sub _smtp_session_input {
         # here nothing should go
         if ( $heap->{'debug'} ) {
             warn
-"SMTP Server sent us a message we can't parse, is the server RFC compliant?!";
+"PoCoClSMTP: $heap->{'sessid'} SMTP Server sent us a message we can't parse, is the server RFC compliant?!";
             warn "Here's what server said: \"$input\"";
         }
     }
@@ -349,7 +350,7 @@ sub _handler_250 {
     $kernel->delay_adjust( $heap->{'alarm'}, $heap->{'smtp_timeout'} );
     my $state = shift @{ $heap->{'session_state'} };
     $heap->{'debug'}
-      and warn "SENDING TO SERVER   : " . $heap->{'smtp_state'}{$code}{$state};
+      and warn " PoCoClSMTP: $heap->{'sessid'} SENDING TO SERVER   : " . $heap->{'smtp_state'}{$code}{$state};
     $heap->{'wheels'}->{'rw'}
       ->put( $heap->{'smtp_state'}{$code}{$state} . $EOL );
 }
@@ -377,7 +378,7 @@ sub _handler_354 {
 
     $kernel->delay_adjust( $heap->{'alarm'}, $heap->{'smtp_timeout'} );
     if ( defined($line) ) {
-        $heap->{'debug'} and warn "SENDING TO SERVER   : $line";
+        $heap->{'debug'} and warn "PoCoClSMTP: $heap->{'sessid'} SENDING TO SERVER   : $line";
         $heap->{'wheels'}->{'rw'}->put( $line . "$EOL" );
         $kernel->yield( "send_more", $code, $message );
     }
@@ -388,7 +389,7 @@ sub _handler_221 {
 
     $kernel->delay_adjust( $heap->{'alarm'}, $heap->{'smtp_timeout'} );
     if ( exists( $heap->{'error'} ) ) {
-        $heap->{'debug'} and warn "Closing connection to server, error";
+        $heap->{'debug'} and warn "PoCoClSMTP: $heap->{'sessid'} Closing connection to server, error";
         $kernel->post(
             $heap->{'sender'},
             $heap->{'smtp_failure'},
@@ -398,7 +399,7 @@ sub _handler_221 {
         );
     }
     else {
-        $heap->{'debug'} and warn "closing connection";
+        $heap->{'debug'} and warn "PoCoClSMTP: $heap->{'sessid'} closing connection";
         $kernel->post( $heap->{'sender'}, $heap->{'smtp_success'}, );
     }
     _smtp_component_destroy();
@@ -424,7 +425,7 @@ sub _handler_220 {
     $kernel->delay_adjust( $heap->{'alarm'}, $heap->{'smtp_timeout'} );
     shift @{ $heap->{'session_state'} };
     $heap->{'debug'}
-      and warn "SENDING TO SERVER   : " . $heap->{'smtp_state'}{$code};
+      and warn "PoCoClSMTP: $heap->{'sessid'} SENDING TO SERVER   : " . $heap->{'smtp_state'}{$code};
     $heap->{'wheels'}->{'rw'}->put( $heap->{'smtp_state'}{$code} . "$EOL" );
 }
 
@@ -433,7 +434,7 @@ sub _handler_non_ehlo {
 
     $kernel->delay_adjust( $heap->{'alarm'}, $heap->{'smtp_timeout'} );
     $heap->{'debug'}
-      and warn "SENDING TO SERVER   : " . $heap->{'smtp_state'}{$code};
+      and warn "PoCoClSMTP: $heap->{'sessid'} SENDING TO SERVER   : " . $heap->{'smtp_state'}{$code};
     $heap->{'wheels'}->{'rw'}->put( $heap->{'smtp_state'}{$code} . "$EOL" );
 }
 
@@ -453,7 +454,7 @@ sub _smtp_session_error {
     my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
     my @sf = @_[ ARG0 .. ARG3 ];
 
-    $heap->{'debug'} and warn "Wheel returned an error";
+    $heap->{'debug'} and warn "PoCoClSMTP: $heap->{'sessid'} Wheel returned an error";
     $kernel->alarm_remove( $heap->{'alarm'} );
 
     # send the error back
@@ -468,7 +469,11 @@ sub _smtp_session_error {
 sub _smtp_component_destroy {
     my $heap = $poe_kernel->get_active_session()->get_heap();
 
-    $poe_kernel->alias_remove( $heap->{'alias'} );
+    if ( $heap->{'alias'} ) {
+    	$poe_kernel->alias_remove( $heap->{'alias'} );
+    } else {
+	$poe_kernel->refcount_decrement( $poe_kernel->get_active_session()->ID() => __PACKAGE__ );
+    }
     $poe_kernel->alarm_remove_all();
     delete $heap->{'wheels'}->{'rw'};
     delete $heap->{'wheels'}->{'sf'};
@@ -521,14 +526,14 @@ POE::Component::Client::SMTP - Sending emails using POE
 
 =head1 VERSION
 
-Version 0.05
+Version 0.06
 
 =head1 SYNOPSIS
 
     use POE::Component::Client::SMTP;
 
     POE::Component::Client::SMTP->send(
-        alias               => 'smtp_client',
+        alias               => 'smtp_client',   # optional
         smtp_sender         => 'foo@bar.com',   # will croak if emtpy
         smtp_recipient      => 'foo@baz.com',   # will croak if empty
         smtp_data           =>  $ref_to_scalar,
@@ -556,7 +561,7 @@ Arguments
 
 =item alias
 
-The component's alias
+The component's alias. This is optional.
 
 =item smtp_server
 

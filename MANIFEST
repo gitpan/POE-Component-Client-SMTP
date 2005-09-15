@@ -1,7 +1,6 @@
 Bugs
 Changes
 lib/POE/Component/Client/SMTP.pm
-Makefile
 Makefile.PL
 MANIFEST
 META.yml
@@ -10,6 +9,7 @@ t/00-prereq.t
 t/05-load.t
 t/10-send.pl
 t/10-send.t
+t/13-send-without-alias.t
 t/15-non_ehlo.t
 t/20-smtp_timeout.t
 t/25-smtp_timeout.t
