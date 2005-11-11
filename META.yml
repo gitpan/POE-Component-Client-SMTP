@@ -1,12 +1,22 @@
-# http://module-build.sourceforge.net/META-spec.html
-#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
-name:         POE-Component-Client-SMTP
-version:      0.06
-version_from: lib/POE/Component/Client/SMTP.pm
-installdirs:  site
+---
+name: POE-Component-Client-SMTP
+version: 0.11
+author:
+  - George Nistorica <ultadm@cpan.org>
+abstract: Asynchronous mail sending with POE
+license: perl
 requires:
-    POE:                           0.25
-    Test::More:                    0
-
-distribution_type: module
-generated_by: ExtUtils::MakeMaker version 6.21
+  Carp: 0
+  Data::Dumper: 0
+  POE: 0.26
+  POE::Filter::Line: 0
+  POE::Filter::Stream: 0
+  POE::Wheel::ReadWrite: 0
+  POE::Wheel::SocketFactory: 0
+  Socket: 0
+  Test::More: 0
+provides:
+  POE::Component::Client::SMTP:
+    file: lib/POE/Component/Client/SMTP.pm
+    version: 0.11
+generated_by: Module::Build version 0.2611

@@ -1,882 +1,778 @@
+# Copyright (c) 2005 George Nistorica
+# All rights reserved.
+# This program is free software; you can redistribute it and/or
+# modify it under the same terms as Perl itself.  See the LICENSE
+# file that comes with this distribution for more details.
+
 package POE::Component::Client::SMTP;
+
+# TODO:
+# * clean up code,
+# * more nice output in debug mode
 
 use warnings;
 use strict;
 
+our $VERSION = '0.11';
+
 use Carp;
 use Socket;
-use Data::Dumper;
-use POE qw(Wheel::SocketFactory Wheel::ReadWrite Filter::Stream);
+use POE qw(Wheel::SocketFactory Wheel::ReadWrite Filter::Line Filter::Stream);
 
-# references:
-# RFC822 http://www.faqs.org/rfcs/rfc822.html
-# RFC2821 http://www.faqs.org/rfcs/rfc2821.html obsoletes
-# RFC821 http://www.faqs.org/rfcs/rfc821.html
-
-our $VERSION = '0.06';
-
-# octal
 my $EOL = "\015\012";
 
-# Mighty Method to shoot the message
-sub send {
+sub send{
+    _create(@_);
+}
 
-    my ( $class, $sender, %params, $alias );
-    my (
-        $smtp_sender, $smtp_recipient, $smtp_server, $smtp_ehlo,
-        $smtp_port,$smtp_bind_address,     $smtp_body, $smtp_data,    $to, $from, $subject,
-        $cc,            $bcc,       $smtp_timeout, $debug,
-        $success_event, $failure_event,
+# Create session
+sub _create {
+    my $class      = shift;
+    my %parameters = @_;
 
-    );
+    # some checking
+    croak "not an object method"     if ( ref($class) );
 
-    # hash containing server response, client request pairs
-    # key -> server code; value -> what client responds to that SMTP code
-    my %smtp_state;
+    # The actual Object;
+    my $self = bless _fill_data( \%parameters ),$class;
 
-    # server may respond 250 for multiple requests. this array helps keeping
-    # track of where we are (obviously when receiving a 250 code from server)
-    my @session_state;
+    # build commands to be sent and expected states
+    $self->_build_expected_states;
+    $self->_build_commands;
 
-   # this array contains "lines" of the email message
-   # (don't want to send it all on the wire, but chunks of the message, then let
-   # POE::Kernel give time to other "threads"
-    my @mail_body;
+    # store the caller
+    $self->parameter("Caller_Session",$poe_kernel->get_active_session());
 
-    # my class name
-    $class = shift;
-
-    # caller, so we know where to send back the SMTP session results
-    $sender = $poe_kernel->get_active_session();
-
-    # fetch the parameters we received from user
-    %params = @_;
-
-    # parameters initialization
-
-    # ALIAS
-
-    $alias = delete $params{'alias'};
-
-    # SMTP SENDER
-    if ( !defined( $params{'smtp_sender'} ) ) {
-        croak
-"$class->send requires \"smtp_sender\"; please refer to $class's pod for details";
-    }
-
-    $smtp_sender = delete $params{'smtp_sender'};
-
-    # SMTP RECIPIENT
-    if ( !defined( $params{'smtp_recipient'} ) ) {
-        croak
-"$class->send requires \"smtp_recipient\"; please refer to $class's pod for details";
-    }
-
-    $smtp_recipient = $params{'smtp_recipient'};
-
-    # SMTP SERVER
-    $smtp_server = delete $params{'smtp_server'} || 'localhost';
-
-    # SMTP EHLO
-    $smtp_ehlo = delete $params{'smtp_ehlo'} || 'localhost';
-
-    # SMTP PORT
-    $smtp_port = delete $params{'smtp_port'} || 25;
-
-    $smtp_bind_address = delete $params{'smtp_bind_address'};
-
-    if ( defined( $params{'smtp_body'} ) ) {
-
-        # SMTP DATA
-        $smtp_body = delete $params{'smtp_body'}
-          || "i've just forgot to write DATA!";
-
-        if ( ref($smtp_body) eq 'SCALAR' ) {
-            my @tmp = split /\r\n/, $$smtp_body;
-            for ( 0 .. $#tmp ) {
-                push @mail_body, split /\r|\n/, $tmp[$_];
-            }
-        }
-        elsif ( ref($smtp_body) eq 'ARRAY' ) {
-            @mail_body = @{$smtp_body};
-        }
-        else {
-            croak
-              "$class->send requires \$smtp_body to be a scalar or array ref";
-        }
-
-        # TO:
-        if ( defined( $params{'to'} ) ) {
-            $to = delete $params{'to'};
-            $to .= " <$smtp_recipient>";
-        }
-        else {
-            $to = $smtp_recipient;
-        }
-
-        # FROM:
-        if ( defined( $params{'from'} ) ) {
-            $from = delete $params{'from'};
-            $from .= " <$smtp_sender>";
-        }
-        else {
-            $from = $smtp_sender;
-        }
-
-        # SUBJECT:
-        $subject = delete $params{'subject'} || "(none)";
-
-        $smtp_state{'354'} =
-          _add_mail_headers( \@mail_body, $to, $from, $subject );
-    }
-    else {
-        $smtp_data = delete $params{'smtp_data'};
-        my @tmp = split /\r\n/, $$smtp_data;
-        for ( 0 .. $#tmp ) {
-            push @mail_body, split /\r|\n/, $tmp[$_];
-        }
-        push @mail_body, ".";
-        $smtp_state{'354'} = \@mail_body;
-    }
-
-    # EVENTS
-    if ( !defined( $params{'SMTPSendSuccessEvent'} ) ) {
-        croak
-"$class->send requires \"SMTPSendSuccessEvent\"; please refer to $class's pod for details";
-    }
-    $success_event = delete $params{'SMTPSendSuccessEvent'};
-
-    if ( !defined( $params{'SMTPSendFailureEvent'} ) ) {
-        croak
-"$class->send requires \"SMTPSendFailureEvent\"; please refer to $class's pod for details";
-    }
-    $failure_event = delete $params{'SMTPSendFailureEvent'};
-
-    # SMTP TIMEOUT
-    $smtp_timeout = delete $params{'smtp_timeout'} || 30;
-
-    # DEBUG
-    $debug = delete $params{'debug'} || 0;
-
-    # ASSEMBLE SMTP STATES
-    $smtp_state{'220'}         = "EHLO $smtp_ehlo";
-    $smtp_state{'554'}         = 'QUIT';
-    $smtp_state{'250'}{'ehlo'} = "MAIL FROM: <$smtp_sender>";
-    $smtp_state{'500'}         = $smtp_state{'501'} = $smtp_state{'502'} =
-      "HELO $smtp_ehlo";
-    $smtp_state{'250'}{'mail_from'} = "RCPT TO: <$smtp_recipient>";
-    $smtp_state{'551'} = $smtp_state{'550'} = 'QUIT';
-    $smtp_state{'250'}{'rcpt_to'} = $smtp_state{'251'} = "DATA";
-
-#    $smtp_state{'354'} = _add_mail_headers( \@mail_body, $to, $from, $subject );
-    $smtp_state{'250'}{'data'} = "QUIT";
-    $smtp_state{'221'} = "";    # the server ends connection
-
-    # ASSEMMBLE 250 code states
-    @session_state = qw(
-      conn_accepted
-      ehlo
-      mail_from
-      rcpt_to
-      data
-    );
-
-    # session
+    # Spawn the PoCoClient::SMTP session
     POE::Session->create(
-        inline_states => {
-            _start               => \&_client_start,
-            smtp_connect_success =>
-              \&_smtp_connect_success,    # connection to SMTP succeeded
-            smtp_connect_error =>
-              \&_smtp_connect_error,      # connection to SMTP failed
-            smtp_session_input =>
-              \&_smtp_session_input,      # reveived data from SMTP server
-            smtp_session_error => \&_smtp_session_error,
-            smtp_timeout_event => \&_smtp_timeout_handler,
+        object_states => [
+            $self => {
+                _start   => "_pococlsmtp_start",
+                _stop    => "_pococlsmtp_stop",
+                _default => "_pococlsmtp_default",
 
-            # SMTP events as sent by server here
-            event_220 => \&_handler_220,
-            event_250 => \&_handler_250,
-            event_251 => \&_handler_251,
-            send_more => \&_handler_354,
-            event_354 => \&_handler_354,
-            event_221 => \&_handler_221,
-            event_421 => \&_handler_421,
+                # public available events
+                smtp_shutdown => "_pococlsmtp_shutdown",
+                smtp_progress => "_pococlsmtp_progress",
 
-            event_500 => \&_handler_non_ehlo,
-            event_501 => \&_handler_non_ehlo,
-            event_502 => \&_handler_non_ehlo,
+                # internal events SMTP codes and stuff
+                smtp_send => "_pococlsmtp_send",
 
-            # codes: 554, 551, 550, and others
-            _default => \&_handler_error_code,
-            _stop    => \&_client_stop,
-        },
+                # network related
+                connection_established => "_pococlsmtp_conn_est",
+                connection_error       => "_pococlsmtp_conn_err",
+                smtp_session_input     => "_pococlsmtp_input",
+                smtp_session_error     => "_pococlsmtp_error",
+                smtp_timeout_event     => "_smtp_timeout_handler",
 
-        heap => {
-            alias         => $alias,           # PoCo::Client::SMTP alias
-            sender        => $sender,          # SENDER
-            smtp_server   => $smtp_server,     # SMTP Server we connect to
-            smtp_port     => $smtp_port,       # SMTP Port
-	    smtp_bind_address => $smtp_bind_address, # Address to bind
-            smtp_timeout  => $smtp_timeout,
-            debug         => $debug,
-            smtp_success  => $success_event,   # Event to send back upon success
-            smtp_failure  => $failure_event,   # Event to send back upon error
-            smtp_state    => \%smtp_state,
-            session_state => \@session_state,
-
-  # error codes as documented in the docs
-  # if there are discrepancies between what's below and the docs, THIS IS A BUG!
-            error_codes => {
-                smtp_talk_error    => 1,
-                smtp_connect_error => 2,
-                smtp_session_error => 3,
-                smtp_timeout       => 4,
+                # return events
+                return_failure => "_pococlsmtp_return_error_event",
             },
-        },
+        ],
+#        options => { trace => 1 },
     );
 }
 
-# _start
-# client start
-sub _client_start {
-    my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
-    my %sf = (
-        RemoteAddress  => $heap->{'smtp_server'},
-        RemotePort     => $heap->{'smtp_port'},
-        SuccessEvent   => "smtp_connect_success",
-        FailureEvent   => "smtp_connect_error",
+# EVENT HANDLERS
+
+sub _pococlsmtp_start {
+    my ( $kernel, $self ) = @_[ KERNEL, OBJECT ];
+
+    # in case there's no alias, use refcount
+    if ( $self->parameter("Alias") ) {
+        $kernel->alias_set( $self->parameter("Alias") );
+    }
+    else {
+        $kernel->refcount_increment(
+            $kernel->get_active_session()->ID() => __PACKAGE__ );
+    }
+
+    # fire the Session
+    $kernel->yield("smtp_send");
+
+}
+
+sub _pococlsmtp_stop {
+    my ( $kernel, $self ) = @_[ KERNEL, OBJECT ];
+
+    carp "CURRENT STATE _pococlsmtp_stop" if $self->debug;
+}
+
+sub _pococlsmtp_default {
+    my ($self) = $_[OBJECT];
+    carp "CURRENT STATE _pococlsmtp_default" if $self->debug;
+}
+
+# this takes care of wheel creation and initial handshake with the SMTP server
+sub _pococlsmtp_send {
+    my ( $kernel, $self ) = @_[ KERNEL, OBJECT ];
+
+    carp "CURRENT STATE: _pococlsmtp_send" if $self->debug;
+
+    my $wheel = POE::Wheel::SocketFactory->new(
+        RemoteAddress  => $self->parameter("Server"),
+        RemotePort     => $self->parameter("Port"),
         SocketDomain   => AF_INET,
         SocketType     => SOCK_STREAM,
         SocketProtocol => 'tcp',
         Reuse          => 'yes',
-    );
-    $sf{'BindAddress'} = $heap->{'smtp_bind_address'} if ( defined( $heap->{'smtp_bind_address'} ) );
-
-    $heap->{'wheels'}->{'sf'} = POE::Wheel::SocketFactory->new(
-	%sf,
+        SuccessEvent   => "connection_established",
+        FailureEvent   => "connection_error",
     );
 
-    # set alias
-    if ( $heap->{'alias'} ) {
-        $kernel->alias_set( $heap->{'alias'} );
-    } else {
-	$kernel->refcount_increment( $kernel->get_active_session()->ID() => __PACKAGE__ );
-    }
-
-    # set alarm too
-    $heap->{'alarm'} =
-      $kernel->delay_set( "smtp_timeout_event", $heap->{'smtp_timeout'} );
-    $heap->{'sessid'} = $kernel->get_active_session()->ID();
+    # store the wheel
+    $self->store_sf_wheel( $wheel );
 }
 
-# smtp_connect_success
-# SocketFactory got connected, cool
-sub _smtp_connect_success {
+sub _pococlsmtp_conn_est {
+    my ( $kernel, $self, $socket ) = @_[ KERNEL, OBJECT, ARG0 ];
 
-    # here's the meat ;-)
-    my ( $kernel, $heap, $socket ) = @_[ KERNEL, HEAP, ARG0 ];
+    carp "CURRENT STATE: _pococlsmtp_conn_est" if $self->debug;
 
-    $heap->{'wheels'}->{'rw'} = POE::Wheel::ReadWrite->new(
+    my $wheel = POE::Wheel::ReadWrite->new(
         Handle       => $socket,
         InputFilter  => POE::Filter::Line->new( Literal => $EOL ),
         OutputFilter => POE::Filter::Stream->new(),
         InputEvent   => 'smtp_session_input',
         ErrorEvent   => 'smtp_session_error',
     );
+
+    # set the alarm for preventing timeouts
+    my $alarm = $kernel->delay_set(
+        "smtp_timeout_event", $self->parameter("Timeout")
+    );
+
+    # store the wheel
+    $self->store_rw_wheel( $wheel );
+    # store the alarm
+    $self->_alarm( $alarm );
 }
 
-# smtp_connect_error
-sub _smtp_connect_error {
-    my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
-    my @sf = @_[ ARG0 .. ARG3 ];
+sub _pococlsmtp_conn_err {
+    my ( $kernel, $self ) = @_[ KERNEL, OBJECT ];
+    my %hash;
 
-    # send the error back
-    $kernel->post(
-        $heap->{'sender'},
-        $heap->{'smtp_failure'},
-        $heap->{'error_codes'}->{'smtp_connect_error'}, @sf
+    carp "CURRENT STATE: _pococlsmtp_conn_err" if $self->debug;
+
+    $hash{'POE::Wheel::SocketFactory'} = @_[ARG0 .. ARG3];
+
+    $kernel->yield(
+        "return_failure",
+        \%hash,
     );
-    _smtp_component_destroy();
+}
+
+# we've got our connection established, now we're processing input
+sub _pococlsmtp_input {
+    my ( $kernel, $self, $input, $wheel_id )
+        = @_[ KERNEL, OBJECT, ARG0, ARG1 ];
+
+    carp "CURRENT STATE: _pococlsmtp_input" if $self->debug;
+
+    # reset alarm
+    $kernel->delay_adjust(
+        $self->_alarm,
+        $self->parameter("Timeout"),
+    );
+
+    print "INPUT: $input\n" if $self->debug;
+
+    if ( $input =~ /^(\d{3})\s+(.*)$/ ) {
+
+        my $to_send = $self->command;
+        if ( !defined($to_send) ){
+            $kernel->post(
+                $self->parameter("Caller_Session"),
+                $self->parameter("SMTP_Success"),
+                $self->parameter("Context"),
+             );
+            $self->_smtp_component_destroy;
+        }else{
+            print "TO SEND: $to_send\n" if $self->debug;        
+
+            $self->store_rw_wheel->put(
+                $to_send.$EOL
+            );
+        }
+    }
+    elsif ( $input =~ /^(\d{3})\-(.*)$/ ) {
+        if ( $self->parameter("Debug") > 1 ) {
+            carp "ESMTP Server capability: $input";
+        }
+    }
+    else {
+        carp "Received unknown string type from SMTP server, \"$input\"" if
+$self->debug;
+        my %hash;
+        $hash{'SMTP_Server_Error'} = $input;
+        $kernel->yield(
+            "return_failure",
+            \%hash,
+        )
+    }
+}
+
+sub _pococlsmtp_error {
+    my ( $kernel, $self ) = @_[ KERNEL, OBJECT ];
+    my %hash;
+
+    carp "CURRENT STATE: _pococlsmtp_error" if $self->debug;
+
+    $hash{'POE::Wheel::ReadWrite'} = @_[ARG0 .. ARG3];
+
+    $kernel->yield(
+        "return_failure",
+        \%hash,
+    );
 }
 
 sub _smtp_timeout_handler {
-    my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
-    $kernel->post(
-        $heap->{'sender'},
-        $heap->{'smtp_failure'},
-        $heap->{'error_codes'}->{'smtp_timeout'},
-        shift @{ $heap->{'session_state'} }
+    my ( $kernel, $self ) = @_[ KERNEL, OBJECT ];
+    my %hash;
+
+    $hash{'Timeout'} = $self->parameter("Timeout");
+    $kernel->yield(
+        'return_failure',
+        \%hash,
     );
-    _smtp_component_destroy();
 }
 
-# smtp_session_input event
-# this routine parses what SMTP server says (line by line) and dispatches the appropiate
-# event to be handled by a routine dedicated to that speciffic SMTP server response
-# Server responses should like this: "XXX optional text hereEOL" or
-#                                    "XXX-optional text hereEOL" in case of EHLO command;
-# this way the server advertises its ESMTP capabilities
+sub _pococlsmtp_return_error_event{
+    my ( $kernel, $self, $arg) = @_[ KERNEL, OBJECT, ARG0];
 
-sub _smtp_session_input {
-    my ( $kernel, $heap, $input, $wheel_id ) = @_[ KERNEL, HEAP, ARG0, ARG1 ];
-    my $event;
+    carp "CURRENT STATE: _pococlsmtp_return_error_event" if $self->debug;
 
-    $kernel->delay_adjust( $heap->{'alarm'}, $heap->{'smtp_timeout'} );
-    if ( $input =~ /^(\d{3})\s+(.*)$/ ) {
-        $heap->{'debug'} and warn "PoCoClSMTP: $heap->{'sessid'} RECEIVED FROM SERVER: $input";
-        $heap->{'debug'} and warn "PoCoClSMTP: $heap->{'sessid'} DISPATCH EVENT      : $1";
-        $kernel->yield( "event_$1", $1, $2 );
-    }
-    elsif ( $input =~ /^(\d{3})\-(.*)$/ ) {
-
-        # nothing
-    }
-    else {
-
-        # here nothing should go
-        if ( $heap->{'debug'} ) {
-            warn
-"PoCoClSMTP: $heap->{'sessid'} SMTP Server sent us a message we can't parse, is the server RFC compliant?!";
-            warn "Here's what server said: \"$input\"";
-        }
-    }
-
-}
-
-sub _handler_250 {
-    my ( $kernel, $heap, $code, $message ) = @_[ KERNEL, HEAP, ARG0, ARG1 ];
-
-    $kernel->delay_adjust( $heap->{'alarm'}, $heap->{'smtp_timeout'} );
-    my $state = shift @{ $heap->{'session_state'} };
-    $heap->{'debug'}
-      and warn " PoCoClSMTP: $heap->{'sessid'} SENDING TO SERVER   : " . $heap->{'smtp_state'}{$code}{$state};
-    $heap->{'wheels'}->{'rw'}
-      ->put( $heap->{'smtp_state'}{$code}{$state} . $EOL );
-}
-
-# handle SMTP command, DATA
-sub _handler_354 {
-    my ( $kernel, $heap, $code, $message ) = @_[ KERNEL, HEAP, ARG0, ARG1 ];
-    my $line;
-
-    if ( ref( $heap->{'smtp_state'}{$code} ) eq 'ARRAY' ) {
-
-        # extract another line to be put on the wire
-        $line = shift @{ $heap->{'smtp_state'}{$code} };
-    }
-    else {
-        if ( defined( $heap->{'smtp_state'}{$code} ) ) {
-            $line = ${ $heap->{'smtp_state'}{$code} };
-
-            #	    $line =~ s/\r|\n/$EOL/;
-            $line .= "$EOL.";
-        }
-
-        $heap->{'smtp_state'}{$code} = undef;
-    }
-
-    $kernel->delay_adjust( $heap->{'alarm'}, $heap->{'smtp_timeout'} );
-    if ( defined($line) ) {
-        $heap->{'debug'} and warn "PoCoClSMTP: $heap->{'sessid'} SENDING TO SERVER   : $line";
-        $heap->{'wheels'}->{'rw'}->put( $line . "$EOL" );
-        $kernel->yield( "send_more", $code, $message );
-    }
-}
-
-sub _handler_221 {
-    my ( $kernel, $heap ) = @_[ KERNEL, HEAP, ARG0, ARG1 ];
-
-    $kernel->delay_adjust( $heap->{'alarm'}, $heap->{'smtp_timeout'} );
-    if ( exists( $heap->{'error'} ) ) {
-        $heap->{'debug'} and warn "PoCoClSMTP: $heap->{'sessid'} Closing connection to server, error";
-        $kernel->post(
-            $heap->{'sender'},
-            $heap->{'smtp_failure'},
-            $heap->{'error_codes'}->{'smtp_talk_error'},
-            $heap->{'error_code'},
-            $heap->{'error_message'},
-        );
-    }
-    else {
-        $heap->{'debug'} and warn "PoCoClSMTP: $heap->{'sessid'} closing connection";
-        $kernel->post( $heap->{'sender'}, $heap->{'smtp_success'}, );
-    }
-    _smtp_component_destroy();
-}
-
-# SMTP server shutdown
-sub _handler_421 {
-    my ( $kernel, $heap, $code, $message ) = @_[ KERNEL, HEAP, ARG0, ARG1 ];
-
-    $kernel->alarm_remove( $heap->{'alarm'} );
-
-    # don't send any quit command, just call the handler
-    $heap->{'error'}{'error_code'}    = $code;
-    $heap->{'error'}{'error_message'} = $message;
-    $kernel->yield("event_221");
-}
-
-sub _handler_220 {
-
-    # server sayd go ahead
-    my ( $kernel, $heap, $code, $message ) = @_[ KERNEL, HEAP, ARG0, ARG1 ];
-
-    $kernel->delay_adjust( $heap->{'alarm'}, $heap->{'smtp_timeout'} );
-    shift @{ $heap->{'session_state'} };
-    $heap->{'debug'}
-      and warn "PoCoClSMTP: $heap->{'sessid'} SENDING TO SERVER   : " . $heap->{'smtp_state'}{$code};
-    $heap->{'wheels'}->{'rw'}->put( $heap->{'smtp_state'}{$code} . "$EOL" );
-}
-
-sub _handler_non_ehlo {
-    my ( $kernel, $heap, $code, $message ) = @_[ KERNEL, HEAP, ARG0, ARG1 ];
-
-    $kernel->delay_adjust( $heap->{'alarm'}, $heap->{'smtp_timeout'} );
-    $heap->{'debug'}
-      and warn "PoCoClSMTP: $heap->{'sessid'} SENDING TO SERVER   : " . $heap->{'smtp_state'}{$code};
-    $heap->{'wheels'}->{'rw'}->put( $heap->{'smtp_state'}{$code} . "$EOL" );
-}
-
-sub _handler_error_code {
-
-    # codes: 554, 551, 550,
-    my ( $kernel, $heap, $code, $message ) = @_[ KERNEL, HEAP, ARG0, ARG1 ];
-
-    $kernel->alarm_remove( $heap->{'alarm'} );
-    $heap->{'wheels'}->{'rw'}->put( 'QUIT' . "$EOL" );
-    $heap->{'error'}{'error_code'}    = $code;
-    $heap->{'error'}{'error_message'} = $message;
-}
-
-# smtp_session_error
-sub _smtp_session_error {
-    my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
-    my @sf = @_[ ARG0 .. ARG3 ];
-
-    $heap->{'debug'} and warn "PoCoClSMTP: $heap->{'sessid'} Wheel returned an error";
-    $kernel->alarm_remove( $heap->{'alarm'} );
-
-    # send the error back
     $kernel->post(
-        $heap->{'sender'},
-        $heap->{'smtp_failure'},
-        $heap->{'error_codes'}->{'smtp_session_error'}, @sf
+        $self->parameter("Caller_Session"),
+        $self->parameter("SMTP_Failure"),
+        $self->parameter("Context"),
+        $arg
     );
-    _smtp_component_destroy();
+    $self->_smtp_component_destroy;
+
 }
 
 sub _smtp_component_destroy {
-    my $heap = $poe_kernel->get_active_session()->get_heap();
+    my $self = shift;
 
-    if ( $heap->{'alias'} ) {
-    	$poe_kernel->alias_remove( $heap->{'alias'} );
-    } else {
-	$poe_kernel->refcount_decrement( $poe_kernel->get_active_session()->ID() => __PACKAGE__ );
-    }
+    carp "CURRENT STATE: _smtp_component_destroy" if $self->debug;
+
+    # remove alarms set for the Timeout
     $poe_kernel->alarm_remove_all();
-    delete $heap->{'wheels'}->{'rw'};
-    delete $heap->{'wheels'}->{'sf'};
+
+    # in case there's no alias, use refcount
+    if ( $self->parameter("Alias") ) {
+        $poe_kernel->alias_remove( $self->parameter("Alias") );
+    }
+    else {
+        $poe_kernel->refcount_decrement(
+            $poe_kernel->get_active_session()->ID() => __PACKAGE__ );
+    }
+
+    # delete all wheels
+    $self->delete_rw_wheel;
+    $self->delete_sf_wheel;
+
 }
 
-# _stop event
-sub _client_stop {
-
-    # anything useful here?
-
+sub _pococlsmtp_shutdown{
 }
 
-sub _rfc_822_date {
-    my @month = qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec);
-    my @day   = qw(Sun Mon Tue Wed Thu Fri Sat);
-    my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) =
-      gmtime(time);
-    my $date;
-    $year += 1900;
-    $date = "$day[$wday], $mday $month[$mon] $year $hour:$min:$sec GMT";
-    return $date;
+sub _pococlsmtp_progress{
 }
 
-sub _add_mail_headers {
-    my $mail_body = shift;
-    my $to        = shift;
-    my $from      = shift;
-    my $subject   = shift;
+# END OF EVENT HANDLERS
 
-    @{$mail_body} = (
-        "To: $to",
-        "From: $from",
-        "Subject: $subject",
-        "Date: " . _rfc_822_date(),
-        "User-Agent: POE::Component::Client::SMTP v$VERSION",
-        "",
-        @{$mail_body},
-        "$EOL."
+# UNDER THE HOOD
+
+# take parameters, do checks on them and fill the object with data
+
+sub _fill_data {
+    my $parameters = shift;
+    my $smtp_hash;
+
+   # defaults
+    my %default = (
+        To           => 'root@localhost',
+        From         => 'root@localhost',
+        Body         => '',
+        Server       => 'localhost',
+        Port         => 25,
+        Timeout      => 30,
+        MyHostname   => "localhost",
+        Debug        => 0,
+        Alias        => undef,
+        Context      => undef,
+        SMTP_Success => undef,
+        SMTP_Failure => undef,
     );
 
-    return $mail_body;
+    #check parameters and set them to defaults if they don't exist
+    for my $parameter ( keys(%default) ) {
+
+        if ( exists($parameters->{$parameter}) ){
+            $smtp_hash->{'Parameter'}->{$parameter} = $parameters->{$parameter};
+        }else{
+            $smtp_hash->{'Parameter'}->{$parameter} = $default{$parameter};
+        }
+    }
+    return $smtp_hash;
+}
+
+# accessor/mutator
+sub parameter {
+    my $self      = shift;
+    my $parameter = shift;
+    my $value     = shift;
+
+    die "This is an object method only" if ( !ref($self) );
+    die "need a parameter!"             if ( !defined($parameter) );
+
+    if ( defined($value) ) {
+        $self->{'Parameter'}->{"$parameter"} = $value;
+    }
+
+    return $self->{'Parameter'}->{"$parameter"};
+}
+
+# accessor/mutator
+sub store_sf_wheel{
+    my $self = shift;
+    my $wheel = shift;
+
+    croak "not a class method" if ( !ref($self) );
+
+    if (defined($wheel)){
+        $self->{'Wheel'}->{'SF'} = $wheel;
+    }
+
+    return $self->{'Wheel'}->{'SF'};
+}
+
+sub delete_sf_wheel{
+    my $self = shift;
+
+    croak "not a class method" if ( !ref($self) );
+
+    return delete $self->{'Wheel'}->{'SF'};
 
 }
 
-=pod 
+sub store_rw_wheel{
+    my $self = shift;
+    my $wheel = shift;
+
+    croak "not a class method" if ( !ref($self) );
+
+    if (defined($wheel)){
+        $self->{'Wheel'}->{'RW'} = $wheel;
+    }
+
+    return $self->{'Wheel'}->{'RW'};
+
+}
+
+sub delete_rw_wheel{
+    my $self = shift;
+
+    croak "not a class method" if ( !ref($self) );
+
+    return delete $self->{'Wheel'}->{'RW'};
+
+}
+
+# accessor/mutator for the alarm
+sub _alarm{
+    my $self = shift;
+    my $alarm = shift;
+
+    croak "not a class method" if ( !ref($self) );
+
+    if ( defined( $alarm ) ){
+        $self->{'session_alarm'} = $alarm;
+        return $self;
+    }else{
+        return $self->{'session_alarm'};
+    }
+}
+
+# return the current expected state
+# return value is a list of expected values
+sub _state{
+    my $self = shift;
+
+    croak "not a class method" if ( !ref($self) );
+
+    return shift @{$self->{'State'}};
+}
+
+# build the expected list of states for every SMTP command we will be sending
+sub _build_expected_states{
+    my $self = shift;
+    my @states;
+
+    croak "not a class method" if ( !ref($self) );
+
+    # initial state, the SMTP server greeting
+    push @states, [220,221];
+
+    # "ehlo" command
+    push @states, [250,251];
+    # TODO: de avut în vedere cazul în care serverul nu înţelege decât HELO
+
+    # "mail from" command
+    push @states, [250,251],
+    
+    my $rcpt_to = \$self->parameter( "To" );
+    
+    # "rcpt to" command
+    if ( ref($$rcpt_to) =~ /SCALAR/io ){
+        push @states, [250,251];
+    }elsif( ref($$rcpt_to) =~/ARRAY/io ){
+        for ( 0 .. $#$$rcpt_to){
+           push @states, [250,251]; 
+        }
+    }else{
+        push @states, [250,251];
+    }
+
+    # "data" command:
+    push @states,[354,];
+
+    # dot command
+    push @states,[250,];
+
+    # "quit" command
+    push @states,[221,];
+
+    $self->{'State'} = @states;
+
+    return $self;
+
+}
+
+# return the next command
+sub command{
+    my $self = shift;
+
+    croak "not a class method" if ( !ref($self) );
+
+    return shift @{ $self->{'Command'} };
+
+}
+
+#  build the list of commands
+sub _build_commands{
+    my $self = shift;
+    my @commands;
+
+    croak "not a class method" if ( !ref($self) );
+
+    push @commands, "HELO ".$self->parameter("MyHostname");
+    push @commands, "MAIL FROM: <".$self->parameter("From").">";
+    my $rcpt_to = \$self->parameter("To");
+    if ( ref( $$rcpt_to) =~ /ARRAY/io ){
+        for my $recipient ( @{$$rcpt_to} ){
+            push @commands, "RCPT TO: <".$recipient.">";
+        }
+    }
+    elsif (ref( $$rcpt_to) =~ /SCALAR/io){
+            push @commands, "RCPT TO: <".$$$rcpt_to.">";
+    }else{
+        # no ref, just a scalar ;-)
+        push  @commands, "RCPT TO: <".$$rcpt_to.">";
+    }
+
+    push @commands,"DATA";
+    # TODO: de adăugat şi Body la comanda "." ? nu prea aş vrea
+    my $body = $self->parameter("Body");
+    $body.="$EOL.";
+    push @commands, $body;
+    #push @commands, '.',
+    push @commands, "QUIT";
+
+    $self->{'Command'} = \@commands;
+
+    return $self;
+}
+
+sub debug{
+    my $self = shift;
+    my $debug_level = shift;
+    
+    croak "not a class method" if ( !ref($self) );
+
+    if ( defined( $debug_level ) ){
+        $self->parameter("Debug") = $debug_level;
+    }
+    
+    return $self->parameter("Debug");
+}
+
+# END UNDER THE HOOD
+
+# POD BELOW
 
 =head1 NAME
 
-POE::Component::Client::SMTP - Sending emails using POE
+POE::Component::Client::SMTP - Asynchronous mail sending with POE
 
 =head1 VERSION
 
-Version 0.06
-
-=head1 SYNOPSIS
-
-    use POE::Component::Client::SMTP;
-
-    POE::Component::Client::SMTP->send(
-        alias               => 'smtp_client',   # optional
-        smtp_sender         => 'foo@bar.com',   # will croak if emtpy
-        smtp_recipient      => 'foo@baz.com',   # will croak if empty
-        smtp_data           =>  $ref_to_scalar,
-        smtp_timeout        => 30,              # seconds, defaults to 30
-        debug               => 1,               # defaults to 0
-        SMTPSendSuccessEvent => $success_event,
-        SMTPSendFailureEvent => $failure_event,
-    );
+Version 0.11
 
 =head1 DESCRIPTION
 
-POE::Component::Client::SMTP can be used to send asynchronous e-mail messages while your POE program still does something else in the meantime.
+PoCoClient::SMTP allows you to send email messages in an asynchronous manner, 
+using POE.
 
-Currently it doesn't support ESMTP features like sending mails trough an encrypted connection, honouring SMTP authentification or fancy stuff like this. It just sends electronic messages trough a SMTP daemon.
+Thus your program isn't blocking while busy talking with an (E)SMTP server.
+
+=head1 SYNOPSIS
+
+B<Warning!> The following examples are B<not> complete programs, and
+aren't designed to be run as full blown applications. Their purpose is to
+quickly
+introduce you to the module.
+
+For complete examples, check the 'eg' directory that can be found in the
+distribution's kit.
+
+A simple example:
+
+ # load PoCoClient::SMTP
+ use POE::Component::Client::SMTP;
+ # spawn a session
+ POE::Component::Client::SMTP->send(
+     From    => 'foo@baz.com',
+     To      => 'john@doe.net',
+     Server  =>  'relay.mailer.net',
+     SMTP_Success    =>  'callback_event_for_success',
+     SMTP_Failure    =>  'callback_event_for_failure',
+ );
+ # and you are all set ;-)
+
+A more complex example:
+
+ # load PoCoClient::SMTP
+ use POE::Component::Client::SMTP;
+ # spawn a session
+ POE::Component::Client::SMTP->send(
+     # Email related parameters
+     From    => 'foo@baz.com',
+     To      => [
+                'john@doe.net',
+                'andy@zzz.org',
+                'peter@z.net',
+                'george@g.com',
+                ],
+     Body    =>  \$email_body,   # here's where your message is stored
+     Server  =>  'relay.mailer.net',
+     Timeout => 100, # 100 seconds before timeouting
+     # POE related parameters
+     Alias           => 'pococlsmtpX',
+     SMTP_Success    =>  'callback_event_for_success',
+     SMTP_Failure    =>  'callback_event_for_failure',
+ );
+ # and you are all set ;-)
+
+=head1 API Changes
+
+As you may have noticed, the API has changed, and this module version is not
+backward compatible.
+
+So if you are upgrading from a previous version, please adjust your code.
 
 =head1 METHODS
 
+Below are the methods this Component has:
+
 =head2 send
 
-This method handles everything needed to send an email message (SMTP compliant, not ESMTP aware).
+This immediately spawns a PoCoClient::SMTP Session and registers 
+itself with the Kernel in order to have its job done. This method may be
+overhead for sending bulk messages, as after sending one message it gets
+destroyed. Maybe in the future, there will be a I<spawn> method that will keep
+the Session around forever, until received a 'shutdown' like event.
 
-Arguments
+=head3 PARAMETERS
 
-=over
+There are two kinds of parameters PoCoClient::SMTP supports: Email related
+parameters and POE related parameters:
 
-=item alias
+=over 8
 
-The component's alias. This is optional.
+=item From
 
-=item smtp_server
+This holds the sender's email address
 
-SMTP server address; defaults to B<localhost>
+B<Defaults> to 'root@localhost', just don't ask why.
 
-=item smtp_ehlo
+=item To
 
-Message to be appended to the EHLO/HELO command; defaults to 'localhost'
+This holds a list of recipients. Note that To/CC/BCC fields are separated in
+your email body. From the SMTP server's point of view (and from this
+component's too) there is no difference as who is To, who CC and who BCC.
 
-=item smtp_port
+The bottom line is: be careful how you construct your email message.
 
-SMTP server port; defaults to B<25>
+B<Defaults> to root@localhost', just don't ask why.
 
-=item smtp_bind_address
+=item Body
 
-Parameter to be passed to POE::Wheel::SocketFactory as the BindAdress attribute.
+Here's the meat. This scalar contains the message you are sending composed of
+Email Fields and the actual message content. You need to construct this by hand
+or use another module. Which one you use is a matter of taste ;-)))
 
-=item smtp_sender
+B<Defaults> to an empty mail body.
 
-Email address from where the message originates; This option is B<mandatory>
+=item Server
 
-=item smtp_recipient
+Here you specify the relay SMTP server to be used by this component. Currently 
+piping thru sendmail is not supported so you need a SMTP server to actually
+do the mail delivery (either by storing the mail somewhere on the hard
+drive, or by relaying to another SMTP server).
 
-Email address for the message delivery; This option is B<mandatory>
+B<Defaults> to 'localhost'
 
-=item to
+=item Port
 
-Recipient's name as it appears in the message's "To:" field; defaults to I<smtp_recipient>
+Usually SMTP servers bind to port 25. (See /etc/services if you are using a
+*NIX like O.S.).
 
-=item from
+Sometimes, SMTP servers are set to listen to other ports, in which case you
+need to set this parameter to the correct value to match your setup.
 
-Sender's name as it appears in the message's "From:" field; defaults to I<smtp_sender>
+B<Defaults> to 25
 
-=item cc
+=item Timeout
 
-Not implemented yet;
+Set the timeout for SMTP transactions (seconds).
 
-=item bcc
+B<Defaults> to 30 seconds
 
-Not implemented yet;
+=item MyHostname
 
-=item subject
+Hostname to present when sending EHLO/HELO command.
 
-The subject of the message
+B<Defaults> to "localhost"
 
-=item smtp_body
+=item Debug
 
-The body of the message; must be a ref to a scalar or an array.
+Set the debugging level. A value greater than 0 increases the Component's
+verbosity
 
-=item smtp_data
+B<Defaults> to 0
 
-Scalar ref to the entire message, constructed outside the module; i.e. using a helper module like Email::MIME::Creator or MIME::Lite
+=item Alias
 
-Using this parameter results in ignoring POE::Component::Client::SMTP's parameters: I<to, from, subject>
+In case you have multiple PoCoClient::SMTP Sessions, you'd like to handle them
+separately, so use Alias to differentiate them.
 
-B<Note:> that your POE program will block during the MIME creation.
+This holds the Session's alias.
 
-=item SMTPSendSuccessEvent
+B<Defaults> to nothing. Internally it refcounts to stay alive.
 
-Specify what event is to be sent back upon successful mail delivery
+=item Context
 
-=item SMTPSendFailureEvent
+You may want to set a context for your POE::Component::Client::SMTP session.
+This is a scalar.
 
-Specify what event is to be sent back upon failure of mail delivery
+When the caller session receives SMTP_Success or SMTP_Failure event, the
+context is also passed to it if defined.
 
-=item smtp_timeout
+=item SMTP_Success
 
-Timeout to SMTP connection; defaults to B<30 seconds>
+Event you want to be called by PoCoClient::SMTP in case of success.
 
-=item debug
+B<Defaults> to nothing. This means that the Component will not trigger any
+event and will silently go away.
 
-Run in debug mode
+It will send you the Context as ARG0 if Context is defined.
+
+=item SMTP_Failure
+
+Event you want to be called by PoCoClient::SMTP in case of failure.
+
+You will get back the following information:
+
+=over 8
+
+=item ARG0
+
+The Context you've set when spawning the component, or undef if no Context
+specified
+
+=item ARG1
+
+A hash ref that currently has only a key:
+
+* SMTP_Server_Error, in this case, the value is the string as returned by the
+server (the error code should be included too by the server in the string)
+
+* Timeout, the value is the amount of seconds the timeout was set to
+
+* POE::Wheel::* depending on the wheel that returned error on us ;-)
+the value is an array containing ARG0 .. ARG3
 
 =back
 
-=head1 Events
-
-PoCo::Client::SMTP sends two events: B<SMTPSendFailureEvent> and B<SMTPSendFailureEvent>.
-
-=over
-
-=item SMTPSendSuccessEvent
-
-SMTPSendSuccessEvent is sent back to the session that spawned PoCo::Client::SMTP when the message is accepted by the SMTP server
-
-=item SMTPSendFailureEvent
-
-SMTPSendFailureEvent is sent back to the session that spawned PoCo::Client::SMTP when the message has not been delivered.
-
-There are three main reasons for failure:
-
-1) A connection could not be established
-
-2) An error occured while network connection still active with the SMTP server
-
-3) An error occured while talking with the SMTP daemon; this means that a misunderstanding between PoCo::Client::SMTP and the SMTP server has occured; if y
-ou feel this shouldn't have happened, fill a bug report along with the session log.
-
-The SMTPSendFailureEvent handler receives the following parameters:
-
-=over
-
-=item *
-
-If ARG0 has a value of 1, then the error occured because of a SMTP session failure
-
-In this case, ARG1 contains the SMTP numeric code, ARG2 contains a string message giving a short explanation of the error.
-
-=item *
-
-If ARG0 has a value of 2, then the error occured because of a network failure 
-
-In this case, ARG1, ARG2, and ARG3 have the values as returned by POE::Wheel::SocketFactory 
-
-=item *
-
-If ARG0 has a value of 3, then the error occured because of a network failure
-
-In this case, ARG1, ARG2, and ARG3 have the values as returned by POE::Wheel::ReadWrite
-
-=item *
-
-If ARG0 has a value of 4, then the error occured because a timeout
-
-In this case, ARG1 holds the SMTP state the PoCoCl::SMTP is while timeouting
+B<Defaults> to nothing. This means that the Component will not trigger any
+event and will silently go away.
 
 =back
-
-If running in debug mode, you will receive not only the last line received from the server, but the entire SMTP session log.
-
-=back
-
-=head1 Examples
-
- # Send an email, having an attachments
-
- my $mail_body = create_message();
-
- POE::Session->create(
-     inline_states => {
-         _start       => \&start,
-         send_mail    => \&send_mail,
-         smtp_success => \&smtp_success,
-         smtp_error   => \&smtp_error,
-         _stop        => \&stop,
-     },
-     heap => { smtp_data => \$mail_body, },
- );
- 
- POE::Kernel->run();
- 
- sub start {
-     $_[KERNEL]->yield("send_mail");
- }
- 
- sub send_mail {
-     POE::Component::Client::SMTP->send(
-         alias          => 'smtp_client',
-         smtp_server    => $server,
-         smtp_port      => $port,
-         smtp_sender    => $sender,
-         smtp_recipient => $recipient,
-         smtp_data      => $_[HEAP]->{'smtp_data'},
-         smtp_timeout   => 10,
-         debug          => 2,
- 
-         SMTPSendSuccessEvent => "smtp_success",
-         SMTPSendFailureEvent => "smtp_error",
-     );
- }
-
- sub create_message {
-     my @parts;
-     my $email;
-     my $message;
- 
-     @parts = (
-         Email::MIME->create(
-             attributes => {
-                 content_type => "text/plain",
-                 disposition  => "attachment",
-                 charset      => "US-ASCII",
-             },
-             body => "Hello there!",
-         ),
- 
-         Email::MIME->create(
-             attributes => {
-                 filename     => 'picture.jpg',
-                 content_type => "image/jpg",
-                 encoding     => "quoted-printable",
-                 name         => "Nokia.jpg",
-             },
-             # BLOCKING!
-             body => io('picture.jpg')->all,
-         ),
-     );
- 
-     $email = Email::MIME->create(
-         header => [ From => 'ultradm@cpan.org' ],
-         parts  => [@parts],
-         charset => "UTF-8",
-     );
-     $email->header_set('Date' => 'Thu, 23 Jun 2005 8:18:35 GMT');
- 
-     return $email->as_string;
- 
- }
-
- # No use of external modules
- ...
-
- POE::Session->create(
-   ...
-   
-     SMTP_Send_Success_Event => \&smtp_success,
-     SMTP_Send_Failure_Event => \&smtp_failure,
-
-   ...
-   
- );
-
- ...
-
- $data = "Here is the info I want to send you:";
- $data .= "1 2 3 4 5 6";
- 
- ...
-
- POE::Component::Client::SMTP->send(
-    alias => 'smtp_client',
-    smtp_server         => 'mail-host.foo.bar',
-    smtp_port           => 25,
-    smtp_sender         => 'me@foo.bar',
-    smtp_recipient      => 'my_girlfriend@baz.com',
-    from		=> "My Name Here",
-    to                  => "The Girls's Name",
-    subject             => "I've just did your homework",
-    smtp_body           =>  \$data,
-    SMTPSendSuccessEvent => 'SMTP_Send_Success_Event',
-    SMTPSendFailureEvent => 'SMTP_Send_Failure_Event',
- );
-
- ...
- 
- sub smtp_success{
-    Logger->log("MAIL sent successfully ");
-    # do something useful here ...
- }
-
- sub smtp_failure{
-    # Oops
-    
-    my $err_type = @_[ARG0];
-
-    if ( $err_type eq == 1 ){
-	my $error_code = @_[ARG1];
-        my $error_message = @_[ARG2];
-        Logger->log( "Received: [$err_code] $error_message from the server" );
-    }elsif ( $err_type == 2 ) {
-	
-        ...
-
-    }
- } 
-
-=head1 Note
-
-Note that I<SMTPSendSuccessEvent> and I<SMTPSendFailureEvent> are relative to what the SMTP server tells us; even if the SMTP server accepts the message fo
-r delivery, it is not guaranteed that the message actually gets delivered. In case an error occurs after the SMTP server accepted the message, an error mes
-sage will be sent back to the sender.
-
-=head1 BUGS
-
-* Beware that the interface can be changed in the future!
-
-Please report any bugs or feature requests to
-C<bug-poe-component-client-smtp@rt.cpan.org>, or through the web interface at
-L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=POE-Component-Client-SMTP>.
-I will be notified, and then you'll automatically be notified of progress on
-your bug as I make changes.
-
-=head1 CAVEATS
-
-Values given to send() are minimally checked.
-
-The module assumes that the given I<smtp_server> is a relay or the target server. This doesn't conform to the RFC 2821.
-
-The MIME creation is left to an external module of your own choice. This means that the process will block until the attachment(s) is (are) slurped from the disk.
-
-=head1 ACKNOWLEDGEMENTS
-
-Thanks to Mike Schroeder for giving me some good ideas about PoCoClSMTP enhancements.
-
-=head1 TODO
-
-See the TODO file in the distribution.
-
-=head1 Changes
-
-See the Changes file in the distribution.
 
 =head1 SEE ALSO
 
-POE::Kernel, POE::Session, POE::Component, POE::Wheel::SocketFactory, POE::Wheel::ReadWrite
+RFC2821 L<POE> L<POE::Session>
 
-RFC 2821
+=head1 BUGS
+
+=over 8
+
+=item * Currently the Component sends only HELO to the server, not EHLO. This
+shouldn't be such a problem as for the moment the Component hasn't any ESMTP
+features.
+
+=back
+
+=head2 Bug Reporting
+
+Please report bugs using the project's page interface, at: 
+L<https://savannah.nongnu.org/projects/pococlsmtp/>
+
+Unified format patches are more than welcome.
+
+=head1 KNOWN ISSUES
+
+=head2 Bare LF characters
+
+Note that the SMTP protocol forbids bare LF characters in e-mail messages.
+PoCoClSMTP doesn't do any checking whether you message is SMTP compliant or not.
+
+Most of the SMTP servers in the wild are tolerant with bare LF characters, but
+you shouldn't count on that.
+
+The point is you shouldn't send email messages having bare LF characters.
+See: http://cr.yp.to/docs/smtplf.html
+
+=head1 ACKNOWLEDGMENTS
+
+=over 4
+
+=item BinGOs for ideas/patches and testing
+
+=item Mike Schroeder for ideas
+
+=back
 
 =head1 AUTHOR
 
-George Nistorica, C<< ultradm@cpan.org >>
+George Nistorica, C<< <ultradm@cpan.org> >>
 
 =head1 COPYRIGHT & LICENSE
 
-Copyright 2005 George Nistorica, All Rights Reserved.
+Copyright 2005 George Nistorica, all rights reserved.
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.

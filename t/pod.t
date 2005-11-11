@@ -1,4 +1,4 @@
-# vim: ts=4 sw=4 syn=perl :
+#!perl -T
 
 use Test::More;
 eval "use Test::Pod 1.14";
