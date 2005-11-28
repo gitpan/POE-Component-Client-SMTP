@@ -1,5 +1,9 @@
 Revision history for POE-Component-Client-SMTP
 
+0.12    November-17-2005
+    * Added BindAddress and BindPort attributes that are passed to
+POE::Wheel::SocketFactory when creating the socket.
+
 0.11    November-11-2005
     * refactored the module to use Objects
     * redone the API

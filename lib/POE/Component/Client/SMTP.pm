@@ -13,7 +13,7 @@ package POE::Component::Client::SMTP;
 use warnings;
 use strict;
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 use Carp;
 use Socket;
@@ -21,7 +21,7 @@ use POE qw(Wheel::SocketFactory Wheel::ReadWrite Filter::Line Filter::Stream);
 
 my $EOL = "\015\012";
 
-sub send{
+sub send {
     _create(@_);
 }
 
@@ -31,17 +31,17 @@ sub _create {
     my %parameters = @_;
 
     # some checking
-    croak "not an object method"     if ( ref($class) );
+    croak "not an object method" if ( ref($class) );
 
     # The actual Object;
-    my $self = bless _fill_data( \%parameters ),$class;
+    my $self = bless _fill_data( \%parameters ), $class;
 
     # build commands to be sent and expected states
     $self->_build_expected_states;
     $self->_build_commands;
 
     # store the caller
-    $self->parameter("Caller_Session",$poe_kernel->get_active_session());
+    $self->parameter( "Caller_Session", $poe_kernel->get_active_session() );
 
     # Spawn the PoCoClient::SMTP session
     POE::Session->create(
@@ -69,7 +69,8 @@ sub _create {
                 return_failure => "_pococlsmtp_return_error_event",
             },
         ],
-#        options => { trace => 1 },
+
+        #        options => { trace => 1 },
     );
 }
 
@@ -109,7 +110,7 @@ sub _pococlsmtp_send {
 
     carp "CURRENT STATE: _pococlsmtp_send" if $self->debug;
 
-    my $wheel = POE::Wheel::SocketFactory->new(
+    my %options = (
         RemoteAddress  => $self->parameter("Server"),
         RemotePort     => $self->parameter("Port"),
         SocketDomain   => AF_INET,
@@ -120,8 +121,16 @@ sub _pococlsmtp_send {
         FailureEvent   => "connection_error",
     );
 
+    # set BindAddress and BindPort if any.
+    for my $opt ( 'BindAddress', 'BindPort' ) {
+        $options{$opt} = $self->parameter($opt)
+          if defined $self->parameter($opt);
+    }
+
+    my $wheel = POE::Wheel::SocketFactory->new( %options, );
+
     # store the wheel
-    $self->store_sf_wheel( $wheel );
+    $self->store_sf_wheel($wheel);
 }
 
 sub _pococlsmtp_conn_est {
@@ -138,14 +147,14 @@ sub _pococlsmtp_conn_est {
     );
 
     # set the alarm for preventing timeouts
-    my $alarm = $kernel->delay_set(
-        "smtp_timeout_event", $self->parameter("Timeout")
-    );
+    my $alarm =
+      $kernel->delay_set( "smtp_timeout_event", $self->parameter("Timeout") );
 
     # store the wheel
-    $self->store_rw_wheel( $wheel );
+    $self->store_rw_wheel($wheel);
+
     # store the alarm
-    $self->_alarm( $alarm );
+    $self->_alarm($alarm);
 }
 
 sub _pococlsmtp_conn_err {
@@ -154,45 +163,37 @@ sub _pococlsmtp_conn_err {
 
     carp "CURRENT STATE: _pococlsmtp_conn_err" if $self->debug;
 
-    $hash{'POE::Wheel::SocketFactory'} = @_[ARG0 .. ARG3];
+    $hash{'POE::Wheel::SocketFactory'} = @_[ ARG0 .. ARG3 ];
 
-    $kernel->yield(
-        "return_failure",
-        \%hash,
-    );
+    $kernel->yield( "return_failure", \%hash, );
 }
 
 # we've got our connection established, now we're processing input
 sub _pococlsmtp_input {
-    my ( $kernel, $self, $input, $wheel_id )
-        = @_[ KERNEL, OBJECT, ARG0, ARG1 ];
+    my ( $kernel, $self, $input, $wheel_id ) = @_[ KERNEL, OBJECT, ARG0, ARG1 ];
 
     carp "CURRENT STATE: _pococlsmtp_input" if $self->debug;
 
     # reset alarm
-    $kernel->delay_adjust(
-        $self->_alarm,
-        $self->parameter("Timeout"),
-    );
+    $kernel->delay_adjust( $self->_alarm, $self->parameter("Timeout"), );
 
     print "INPUT: $input\n" if $self->debug;
 
     if ( $input =~ /^(\d{3})\s+(.*)$/ ) {
 
         my $to_send = $self->command;
-        if ( !defined($to_send) ){
+        if ( !defined($to_send) ) {
             $kernel->post(
                 $self->parameter("Caller_Session"),
                 $self->parameter("SMTP_Success"),
                 $self->parameter("Context"),
-             );
-            $self->_smtp_component_destroy;
-        }else{
-            print "TO SEND: $to_send\n" if $self->debug;        
-
-            $self->store_rw_wheel->put(
-                $to_send.$EOL
             );
+            $self->_smtp_component_destroy;
+        }
+        else {
+            print "TO SEND: $to_send\n" if $self->debug;
+
+            $self->store_rw_wheel->put( $to_send . $EOL );
         }
     }
     elsif ( $input =~ /^(\d{3})\-(.*)$/ ) {
@@ -201,14 +202,11 @@ sub _pococlsmtp_input {
         }
     }
     else {
-        carp "Received unknown string type from SMTP server, \"$input\"" if
-$self->debug;
+        carp "Received unknown string type from SMTP server, \"$input\""
+          if $self->debug;
         my %hash;
         $hash{'SMTP_Server_Error'} = $input;
-        $kernel->yield(
-            "return_failure",
-            \%hash,
-        )
+        $kernel->yield( "return_failure", \%hash, );
     }
 }
 
@@ -218,12 +216,9 @@ sub _pococlsmtp_error {
 
     carp "CURRENT STATE: _pococlsmtp_error" if $self->debug;
 
-    $hash{'POE::Wheel::ReadWrite'} = @_[ARG0 .. ARG3];
+    $hash{'POE::Wheel::ReadWrite'} = @_[ ARG0 .. ARG3 ];
 
-    $kernel->yield(
-        "return_failure",
-        \%hash,
-    );
+    $kernel->yield( "return_failure", \%hash, );
 }
 
 sub _smtp_timeout_handler {
@@ -231,22 +226,18 @@ sub _smtp_timeout_handler {
     my %hash;
 
     $hash{'Timeout'} = $self->parameter("Timeout");
-    $kernel->yield(
-        'return_failure',
-        \%hash,
-    );
+    $kernel->yield( 'return_failure', \%hash, );
 }
 
-sub _pococlsmtp_return_error_event{
-    my ( $kernel, $self, $arg) = @_[ KERNEL, OBJECT, ARG0];
+sub _pococlsmtp_return_error_event {
+    my ( $kernel, $self, $arg ) = @_[ KERNEL, OBJECT, ARG0 ];
 
     carp "CURRENT STATE: _pococlsmtp_return_error_event" if $self->debug;
 
     $kernel->post(
         $self->parameter("Caller_Session"),
         $self->parameter("SMTP_Failure"),
-        $self->parameter("Context"),
-        $arg
+        $self->parameter("Context"), $arg
     );
     $self->_smtp_component_destroy;
 
@@ -275,10 +266,10 @@ sub _smtp_component_destroy {
 
 }
 
-sub _pococlsmtp_shutdown{
+sub _pococlsmtp_shutdown {
 }
 
-sub _pococlsmtp_progress{
+sub _pococlsmtp_progress {
 }
 
 # END OF EVENT HANDLERS
@@ -291,7 +282,7 @@ sub _fill_data {
     my $parameters = shift;
     my $smtp_hash;
 
-   # defaults
+    # defaults
     my %default = (
         To           => 'root@localhost',
         From         => 'root@localhost',
@@ -300,6 +291,8 @@ sub _fill_data {
         Port         => 25,
         Timeout      => 30,
         MyHostname   => "localhost",
+        BindAddress  => undef,
+        BindPort     => undef,
         Debug        => 0,
         Alias        => undef,
         Context      => undef,
@@ -310,9 +303,10 @@ sub _fill_data {
     #check parameters and set them to defaults if they don't exist
     for my $parameter ( keys(%default) ) {
 
-        if ( exists($parameters->{$parameter}) ){
+        if ( exists( $parameters->{$parameter} ) ) {
             $smtp_hash->{'Parameter'}->{$parameter} = $parameters->{$parameter};
-        }else{
+        }
+        else {
             $smtp_hash->{'Parameter'}->{$parameter} = $default{$parameter};
         }
     }
@@ -336,20 +330,20 @@ sub parameter {
 }
 
 # accessor/mutator
-sub store_sf_wheel{
-    my $self = shift;
+sub store_sf_wheel {
+    my $self  = shift;
     my $wheel = shift;
 
     croak "not a class method" if ( !ref($self) );
 
-    if (defined($wheel)){
+    if ( defined($wheel) ) {
         $self->{'Wheel'}->{'SF'} = $wheel;
     }
 
     return $self->{'Wheel'}->{'SF'};
 }
 
-sub delete_sf_wheel{
+sub delete_sf_wheel {
     my $self = shift;
 
     croak "not a class method" if ( !ref($self) );
@@ -358,13 +352,13 @@ sub delete_sf_wheel{
 
 }
 
-sub store_rw_wheel{
-    my $self = shift;
+sub store_rw_wheel {
+    my $self  = shift;
     my $wheel = shift;
 
     croak "not a class method" if ( !ref($self) );
 
-    if (defined($wheel)){
+    if ( defined($wheel) ) {
         $self->{'Wheel'}->{'RW'} = $wheel;
     }
 
@@ -372,7 +366,7 @@ sub store_rw_wheel{
 
 }
 
-sub delete_rw_wheel{
+sub delete_rw_wheel {
     my $self = shift;
 
     croak "not a class method" if ( !ref($self) );
@@ -382,68 +376,72 @@ sub delete_rw_wheel{
 }
 
 # accessor/mutator for the alarm
-sub _alarm{
-    my $self = shift;
+sub _alarm {
+    my $self  = shift;
     my $alarm = shift;
 
     croak "not a class method" if ( !ref($self) );
 
-    if ( defined( $alarm ) ){
+    if ( defined($alarm) ) {
         $self->{'session_alarm'} = $alarm;
         return $self;
-    }else{
+    }
+    else {
         return $self->{'session_alarm'};
     }
 }
 
 # return the current expected state
 # return value is a list of expected values
-sub _state{
+sub _state {
     my $self = shift;
 
     croak "not a class method" if ( !ref($self) );
 
-    return shift @{$self->{'State'}};
+    return shift @{ $self->{'State'} };
 }
 
 # build the expected list of states for every SMTP command we will be sending
-sub _build_expected_states{
+sub _build_expected_states {
     my $self = shift;
     my @states;
 
     croak "not a class method" if ( !ref($self) );
 
     # initial state, the SMTP server greeting
-    push @states, [220,221];
+    push @states, [ 220, 221 ];
 
     # "ehlo" command
-    push @states, [250,251];
+    push @states, [ 250, 251 ];
+
     # TODO: de avut în vedere cazul în care serverul nu înţelege decât HELO
 
     # "mail from" command
-    push @states, [250,251],
-    
-    my $rcpt_to = \$self->parameter( "To" );
-    
+    push @states, [ 250, 251 ],
+
+      my $rcpt_to = \$self->parameter("To");
+
     # "rcpt to" command
-    if ( ref($$rcpt_to) =~ /SCALAR/io ){
-        push @states, [250,251];
-    }elsif( ref($$rcpt_to) =~/ARRAY/io ){
-        for ( 0 .. $#$$rcpt_to){
-           push @states, [250,251]; 
+    if ( ref($$rcpt_to) =~ /SCALAR/io ) {
+        push @states, [ 250, 251 ];
+    }
+    elsif ( ref($$rcpt_to) =~ /ARRAY/io ) {
+        for ( 0 .. $#$$rcpt_to ) {
+            push @states, [ 250, 251 ];
         }
-    }else{
-        push @states, [250,251];
+    }
+    else {
+        push @states, [ 250, 251 ];
     }
 
     # "data" command:
-    push @states,[354,];
+    push @states, [ 354, ];
 
     # dot command
-    push @states,[250,];
+    push @states, [ 250, ];
 
     # "quit" command
-    push @states,[221,];
+    push @states, [ 221, ];
 
     $self->{'State'} = @states;
 
@@ -452,7 +450,7 @@ sub _build_expected_states{
 }
 
 # return the next command
-sub command{
+sub command {
     my $self = shift;
 
     croak "not a class method" if ( !ref($self) );
@@ -462,32 +460,36 @@ sub command{
 }
 
 #  build the list of commands
-sub _build_commands{
+sub _build_commands {
     my $self = shift;
     my @commands;
 
     croak "not a class method" if ( !ref($self) );
 
-    push @commands, "HELO ".$self->parameter("MyHostname");
-    push @commands, "MAIL FROM: <".$self->parameter("From").">";
+    push @commands, "HELO " . $self->parameter("MyHostname");
+    push @commands, "MAIL FROM: <" . $self->parameter("From") . ">";
     my $rcpt_to = \$self->parameter("To");
-    if ( ref( $$rcpt_to) =~ /ARRAY/io ){
-        for my $recipient ( @{$$rcpt_to} ){
-            push @commands, "RCPT TO: <".$recipient.">";
+    if ( ref($$rcpt_to) =~ /ARRAY/io ) {
+        for my $recipient ( @{$$rcpt_to} ) {
+            push @commands, "RCPT TO: <" . $recipient . ">";
         }
     }
-    elsif (ref( $$rcpt_to) =~ /SCALAR/io){
-            push @commands, "RCPT TO: <".$$$rcpt_to.">";
-    }else{
+    elsif ( ref($$rcpt_to) =~ /SCALAR/io ) {
+        push @commands, "RCPT TO: <" . $$$rcpt_to . ">";
+    }
+    else {
+
         # no ref, just a scalar ;-)
-        push  @commands, "RCPT TO: <".$$rcpt_to.">";
+        push @commands, "RCPT TO: <" . $$rcpt_to . ">";
     }
 
-    push @commands,"DATA";
+    push @commands, "DATA";
+
     # TODO: de adăugat şi Body la comanda "." ? nu prea aş vrea
     my $body = $self->parameter("Body");
-    $body.="$EOL.";
+    $body .= "$EOL.";
     push @commands, $body;
+
     #push @commands, '.',
     push @commands, "QUIT";
 
@@ -496,16 +498,16 @@ sub _build_commands{
     return $self;
 }
 
-sub debug{
-    my $self = shift;
+sub debug {
+    my $self        = shift;
     my $debug_level = shift;
-    
+
     croak "not a class method" if ( !ref($self) );
 
-    if ( defined( $debug_level ) ){
+    if ( defined($debug_level) ) {
         $self->parameter("Debug") = $debug_level;
     }
-    
+
     return $self->parameter("Debug");
 }
 
@@ -519,7 +521,7 @@ POE::Component::Client::SMTP - Asynchronous mail sending with POE
 
 =head1 VERSION
 
-Version 0.11
+Version 0.12
 
 =head1 DESCRIPTION
 
@@ -656,6 +658,16 @@ B<Defaults> to 30 seconds
 Hostname to present when sending EHLO/HELO command.
 
 B<Defaults> to "localhost"
+
+=item BindAddress
+
+This attribute is set when creating the socket connection to the SMTP server.
+See POE::Wheel::SocketFactory for details.
+
+=item BindPort
+
+This attribute is set when creating the socket connection to the SMTP server.
+See POE::Wheel::SocketFactory for details.
 
 =item Debug
 
