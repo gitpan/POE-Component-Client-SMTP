@@ -1,8 +1,8 @@
 ---
 name: POE-Component-Client-SMTP
-version: 0.12
+version: 0.13
 author:
-  - George Nistorica <ultadm@cpan.org>
+  - 'George Nistorica <ultadm@cpan.org>'
 abstract: Asynchronous mail sending with POE
 license: perl
 requires:
@@ -18,5 +18,5 @@ requires:
 provides:
   POE::Component::Client::SMTP:
     file: lib/POE/Component/Client/SMTP.pm
-    version: 0.12
+    version: 0.13
 generated_by: Module::Build version 0.2611

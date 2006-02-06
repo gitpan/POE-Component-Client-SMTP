@@ -15,5 +15,6 @@ t/010-send-simple.t
 t/020-send-using-all-params.t
 t/050-send-with-bcc-cc.t
 t/060-send-defaults.t
+t/070-test-error-return.t
 t/pod-coverage.t
 t/pod.t

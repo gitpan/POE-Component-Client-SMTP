@@ -13,7 +13,7 @@ package POE::Component::Client::SMTP;
 use warnings;
 use strict;
 
-our $VERSION = '0.12';
+our $VERSION = '0.13';
 
 use Carp;
 use Socket;
@@ -163,7 +163,7 @@ sub _pococlsmtp_conn_err {
 
     carp "CURRENT STATE: _pococlsmtp_conn_err" if $self->debug;
 
-    $hash{'POE::Wheel::SocketFactory'} = @_[ ARG0 .. ARG3 ];
+    $hash{'POE::Wheel::SocketFactory'} = [ @_[ ARG0 .. ARG3 ] ];
 
     $kernel->yield( "return_failure", \%hash, );
 }
@@ -216,7 +216,7 @@ sub _pococlsmtp_error {
 
     carp "CURRENT STATE: _pococlsmtp_error" if $self->debug;
 
-    $hash{'POE::Wheel::ReadWrite'} = @_[ ARG0 .. ARG3 ];
+    $hash{'POE::Wheel::ReadWrite'} = [ @_[ ARG0 .. ARG3 ] ];
 
     $kernel->yield( "return_failure", \%hash, );
 }
@@ -521,7 +521,7 @@ POE::Component::Client::SMTP - Asynchronous mail sending with POE
 
 =head1 VERSION
 
-Version 0.12
+Version 0.13
 
 =head1 DESCRIPTION
 
@@ -725,7 +725,7 @@ server (the error code should be included too by the server in the string)
 * Timeout, the value is the amount of seconds the timeout was set to
 
 * POE::Wheel::* depending on the wheel that returned error on us ;-)
-the value is an array containing ARG0 .. ARG3
+the value is a ref to an array containing ARG0 .. ARG3
 
 =back
 

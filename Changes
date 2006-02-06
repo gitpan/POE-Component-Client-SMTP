@@ -1,5 +1,14 @@
 Revision history for POE-Component-Client-SMTP
 
+0.13    February-06-2006
+    * Fixed a bug concerning the return values in case of error sending an email
+        This means that ARG1 sent back when SMTP_Failure event occurs, having a
+        key like OE::Wheel::* will contain a ref to an array containing the
+        error received by the underlying wheel
+        ( Thanks to Sergey Skvortsov for pointing me that out )
+    * Added test file for checking the return when POE::Wheel::SocketFactory
+        fails
+
 0.12    November-17-2005
     * Added BindAddress and BindPort attributes that are passed to
 POE::Wheel::SocketFactory when creating the socket.
@@ -10,7 +19,7 @@ POE::Wheel::SocketFactory when creating the socket.
     * added examples
     * added BCC/CC support
     * added context support (Mike Schroeder's suggestion)
-    * removed Alias as a mandatory parameters (patch from BinGOs)
+    * removed Alias as a mandatory parameter (patch from BinGOs)
 
 0.06 - 0.10 Development or inexistent versions
 
