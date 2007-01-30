@@ -1,4 +1,12 @@
 Revision history for POE-Component-Client-SMTP
+0.14	January-25-2007
+    * Fixed bug 24541 ( http://rt.cpan.org/Ticket/Display.html?id=24541 )
+    reported by Thomas Klausner ( DOMM )
+    "In line 182 of PoCo::Client::SMTP.pm, you check the return value via a
+    regular expression. But if the return value indicates an error
+    (according to RFC 2821 Section 4.2.1 if the retrun value starts with
+    5xx), you still continue to post the data. And in the end, the
+    SMTP_Failure event is never called."
 
 0.13    February-06-2006
     * Fixed a bug concerning the return values in case of error sending an email

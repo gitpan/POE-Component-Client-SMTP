@@ -10,15 +10,20 @@
 use strict;
 
 use lib '../lib';
-use Test::More tests=>6;    # including use_ok
+use Test::More;
+eval{
+    require POE::Component::Server::TCP;
+};
+if ($@){
+    plan skip_all => "POE::Component::Server::TCP is not installed";
+}else{
+    plan tests=>1;
+}
 use Data::Dumper;
 use Carp;
-
-BEGIN{use_ok("IO::Socket::INET");};
-BEGIN{use_ok("POE");};
-BEGIN{use_ok("POE::Wheel::ListenAccept");};
-BEGIN{use_ok("POE::Component::Server::TCP");};
-BEGIN{use_ok("POE::Component::Client::SMTP");};
+use Socket;
+use POE;
+use POE::Component::Client::SMTP;
 
 my $test = 'undef';
 
@@ -28,11 +33,10 @@ my $from;
 my $debug = 0;
 
 $smtp_message = create_smtp_message();
-@recipients = qw(
-    george@localhost,
-    root@localhost,
-    george.nistorica@localhost,
-);
+#@recipients = qw(
+#    'george@localhost',
+#);
+my $recipient = 'george@localhost';
 $from = 'george@localhost';
 
 ##### SMTP server vars
@@ -47,9 +51,7 @@ my @smtp_server_responses = (
     "250-ETRN$EOL".
     "250 8BITMIME",
     "250 Ok",   # mail from
-    "250 Ok",   # rcpt to:
-    "250 Ok",   # rcpt to:, cc
-    "250 Ok",   # rctp to:, bcc
+    "500 w00t",   # rcpt to:
     "354 End data with <CR><LF>.<CR><LF>",  # data
     "250 Ok: queued as 549B14484F", # end data
     "221 Bye",  # quit
@@ -87,17 +89,15 @@ POE::Session->create(
 
 POE::Kernel->run();
 
-is( $test, 1, "Send, To, CC, BCC");
-diag("Send, To, CC, BCC");
+is( $test, 1, "SMTP code 500");
+diag("5XY Code");
 
 
 sub start_session{
-    carp "start_session" if ($debug == 2);
     $_[KERNEL]->yield("send_mail");
 }
 
 sub spawn_pococlsmt{
-    carp "spawn_pococlsmt" if ($debug == 2);
     POE::Component::Client::SMTP->send(
         From => $from,
         To => \@recipients,
@@ -107,34 +107,29 @@ sub spawn_pococlsmt{
         Port    => $port,
         Body => $smtp_message,
         Context => "test context",
-        Debug => 0,
-
     );
 }
 
 sub stop_session{
     # stop server
-    carp "stop_session" if ( $debug == 2);
     $_[KERNEL]->call( smtp_server => "shutdown" );
 }
 
 sub smtp_send_success{
     my ($arg0, $arg1) = @_[ARG0, ARG1];
     print "ARG0, ", Dumper($arg0), "\nARG1, ",Dumper($arg1) if $debug;
-    $test = 1;
+    $test = 0;
 }
 
 sub smtp_send_failure{
     my ($arg0, $arg1) = @_[ARG0, ARG1];
     print "ARG0, ", Dumper($arg0), "\nARG1, ",Dumper($arg1) if $debug;
-    $test = 0;
+    $test = 1;
 }
 
 sub create_smtp_message{
     my $body = <<EOB;
 To: George Nistorica <george\@localhost>
-CC: Root <george\@localhost>
-Bcc: Alter Ego <george.nistorica\@localhost>
 From: Charlie Root <george\@localhost>
 Subject: Email test
 
@@ -151,10 +146,9 @@ sub error_handler{
 
 sub handle_client_input{
     my ( $heap, $input ) = @_[ HEAP, ARG0 ];
-    carp "handle_client_input" if ($debug == 2);
 
     if ($input =~ /^(helo|ehlo|mail from:|rcpt to:|data|\.|quit)/i){
-#        print "$input\n" if $debug;
+        print "$input\n" if $debug;
         $heap->{'client'}->put(shift @smtp_server_responses);
     }
 }
@@ -164,15 +158,12 @@ sub handle_client_connect{
 }
 
 sub handle_client_disconnect{
-    carp "handle_client_disconnect" if ( $debug == 2);
 }
 
 sub handle_client_error{
-    carp "handle_client_error" if ($debug == 2);
 }
 
 sub handle_client_flush{
-    carp "handle_client_flush" if ($debug == 2);
 }
 
 

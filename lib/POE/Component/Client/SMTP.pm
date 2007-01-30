@@ -13,7 +13,7 @@ package POE::Component::Client::SMTP;
 use warnings;
 use strict;
 
-our $VERSION = '0.13';
+our $VERSION = '0.14';
 
 use Carp;
 use Socket;
@@ -179,21 +179,50 @@ sub _pococlsmtp_input {
 
     print "INPUT: $input\n" if $self->debug;
 
+    # allright, received something in the form XXX text
     if ( $input =~ /^(\d{3})\s+(.*)$/ ) {
 
-        my $to_send = $self->command;
-        if ( !defined($to_send) ) {
-            $kernel->post(
-                $self->parameter("Caller_Session"),
-                $self->parameter("SMTP_Success"),
-                $self->parameter("Context"),
-            );
-            $self->_smtp_component_destroy;
+        # is the SMTP server letting us know there's a problem?
+        my ( $smtp_code, $smtp_string ) = ( $1, $2 );
+        if ( $smtp_code =~ /^(1|2|3)\d{2}$/ ) {
+
+            # we're ok
+            # and also stupid, don't know estmp, don't know 1XY codes
+            my $to_send = $self->command;
+            if ( !defined($to_send) ) {
+                $kernel->post(
+                    $self->parameter("Caller_Session"),
+                    $self->parameter("SMTP_Success"),
+                    $self->parameter("Context"),
+                );
+                $self->_smtp_component_destroy;
+            }
+            else {
+                print "TO SEND: $to_send\n" if $self->debug;
+
+                $self->store_rw_wheel->put( $to_send . $EOL );
+            }
+        }
+        elsif ( $smtp_code =~ /^(4|5)\d{2}$/ ) {
+            carp "Server Error! $input \n" if $self->debug;
+
+            # the server responder with 4XY or 5XY code;
+            # while 4XY is temporary failure, 5XY is permanent
+            # it's unclear to me whether PoCoClientSMTP should retry in case of
+            # 4XY or the user should. In case is PoCoClientSMTP's job, then I
+            # should define for how many times and what interval
+            my %hash;
+            $hash{'SMTP_Server_Error'} = $input;
+            $kernel->yield( "return_failure", \%hash, );
         }
         else {
-            print "TO SEND: $to_send\n" if $self->debug;
 
-            $self->store_rw_wheel->put( $to_send . $EOL );
+            # oops! we shouldn't end-up here unless the server is buggy
+            carp "Error! I don't know the SMTP Code! $input \n"
+              if $self->debug;
+            my %hash;
+            $hash{'SMTP_Server_Error'} = $input;
+            $kernel->yield( "return_failure", \%hash, );
         }
     }
     elsif ( $input =~ /^(\d{3})\-(.*)$/ ) {
@@ -767,6 +796,10 @@ you shouldn't count on that.
 
 The point is you shouldn't send email messages having bare LF characters.
 See: http://cr.yp.to/docs/smtplf.html
+
+=head1 ESMTP error codes 1XY
+
+ESMTP error codes 1XY are ignored and considered as 2XY codes
 
 =head1 ACKNOWLEDGMENTS
 
