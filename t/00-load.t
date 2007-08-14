@@ -1,6 +1,6 @@
 #!perl -T
 
-# Copyright (c) 2005 George Nistorica
+# Copyright (c) 2005-2007 George Nistorica
 # All rights reserved.
 # This program is part of POE::Component::Client::SMTP
 # POE::Componen::Client::SMTP is free software; you can redistribute it and/or
@@ -10,7 +10,9 @@
 use Test::More tests => 1;
 
 BEGIN {
-	use_ok( 'POE::Component::Client::SMTP' );
+    use_ok('POE::Component::Client::SMTP');
 }
 
-diag( "Testing POE::Component::Client::SMTP $POE::Component::Client::SMTP::VERSION, Perl $], $^X" );
+diag(
+"Testing POE::Component::Client::SMTP $POE::Component::Client::SMTP::VERSION, Perl $], $^X"
+);

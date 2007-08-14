@@ -1,4 +1,12 @@
 Revision history for POE-Component-Client-SMTP
+0.17    May 2007
+    * Added support for TransactionLog, logging the SMTP session and posting it
+    back to the caller session
+0.16    May 2007
+    * Added support for reading email body from files, via the parameters:
+        MessageFile and FileHandle
+0.15    February-16-2007
+    * Added ESMTP support for PLAIN AUTH (request from David Janssens)
 0.14	January-25-2007
     * Fixed bug 24541 ( http://rt.cpan.org/Ticket/Display.html?id=24541 )
     reported by Thomas Klausner ( DOMM )
@@ -38,10 +46,10 @@ POE::Wheel::SocketFactory when creating the socket.
 0.04    June-20-2005
     * added a new parameter for the send() method, smtp_body instead
     of smtp_data
-    * smtp_data is mutually exclusive with any parameter that may 
+    * smtp_data is mutually exclusive with any parameter that may
     alter the message's header; this means that you either send a
     simple message assembled by POE::Component::Client::SMTP using
-    smtp_body or you construct the entire message elsewhere and 
+    smtp_body or you construct the entire message elsewhere and
     pass it to the smtp_data parameter
     * added smtp_ehlo so that the user may control what PoCoClSMTP
     sends in response of server greeting

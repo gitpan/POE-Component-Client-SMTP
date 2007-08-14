@@ -8,10 +8,10 @@ use strict;
 # modify it under the same terms as Perl itself.  See the LICENSE
 # file that comes with this distribution for more details.
 
-my $sender      = 'replace@with.email.address.net';
-my $recipient   = 'replace@with.email.address.net';
-my $smtp_server = 'your.relay.mail.server.net';
-my $smtp_port   = 25;
+my $sender      = 'george@localhost';
+my $recipient   = 'george@localhost';
+my $smtp_server = 'localhost';
+my $user        = 'george', my $pass = 'abracadabra', my $smtp_port = 25;
 
 # use the library from the kit
 # remove the line below if you're using the system wide installed
@@ -26,6 +26,8 @@ use POE;
 use POE::Component::Client::SMTP;
 
 # main()
+
+print "V: ", $POE::Component::Client::SMTP::VERSION, "\n";
 POE::Session->create(
     inline_states => {
         _start            => \&start_main_session,
@@ -46,6 +48,7 @@ sub start_main_session {
     $_[KERNEL]->yield("send_mail");
 }
 
+# 9qi<|'K3,8fJQpt!#z%S6AA9j8'2
 sub send_mail_from_main_session {
     my $email = create_message();
 
@@ -55,13 +58,19 @@ sub send_mail_from_main_session {
     $email =~ s/\n/\r\n/g;
 
     POE::Component::Client::SMTP->send(
-        From         => $sender,
-        To           => $recipient,
-        Server       => $smtp_server,
+        From   => $sender,
+        To     => $recipient,
+        Server => $smtp_server,
+        Auth   => {
+            mechanism => 'PLAIN',
+            user      => $user,
+            pass      => $pass,
+        },
         Port         => $smtp_port,
         Body         => $email,
         SMTP_Success => 'send_mail_success',
         SMTP_Failure => 'send_mail_failure',
+        Debug        => 1,
     );
 }
 
