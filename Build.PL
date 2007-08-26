@@ -27,6 +27,7 @@ my $builder = Module::Build->new(
         'Symbol'                    => 0,
     },
     add_to_cleanup      => [ 'POE-Component-Client-SMTP-*' ],
+    create_makefile_pl => 'traditional',
 );
 
 $builder->create_build_script();

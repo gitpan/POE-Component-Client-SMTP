@@ -12,7 +12,7 @@ package POE::Component::Client::SMTP;
 use warnings;
 use strict;
 
-our $VERSION = '0.17';
+our $VERSION = '0.18';
 
 use Data::Dumper;
 use Carp;
@@ -215,7 +215,7 @@ sub _pococlsmtp_input {
     if (
         $input =~ /
                     ^(\d{3})    # first 3 digits
-                    \s+         
+                    \s+
                     (.*)$       # SMTP message corresponding to the SMTP code
                     /x
       )

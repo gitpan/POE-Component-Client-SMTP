@@ -1,10 +1,12 @@
 ---
 name: POE-Component-Client-SMTP
-version: 0.17
+version: 0.18
 author:
   - 'George Nistorica <ultadm@cpan.org>'
 abstract: Asynchronous mail sending with POE
 license: perl
+resources:
+  license: http://dev.perl.org/licenses/
 requires:
   Carp: 0
   Data::Dumper: 0
@@ -16,13 +18,11 @@ requires:
   Socket: 0
   Symbol: 0
   Test::More: 0
+provides:
+  POE::Component::Client::SMTP:
+    file: lib/POE/Component/Client/SMTP.pm
+    version: 0.18
 generated_by: Module::Build version 0.2808
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.2.html
   version: 1.2
-provides:
-  POE::Component::Client::SMTP:
-    file: lib/POE/Component/Client/SMTP.pm
-    version: 0.17
-resources:
-  license: http://dev.perl.org/licenses/
