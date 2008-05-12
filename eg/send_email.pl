@@ -1,22 +1,25 @@
-#!/usr/bin/perl -w
+#!/usr/bin/env perl
 use strict;
+use warnings;
 
-# Copyright (c) 2005 - 2007 George Nistorica
+# Copyright (c) 2005 - 2008 George Nistorica
 # All rights reserved.
 # This file is part of POE::Component::Client::SMTP
 # POE::Component::Client::SMTP is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.  See the LICENSE
 # file that comes with this distribution for more details.
 
-my $sender      = 'replace@with.email.address.net';
-my $recipient   = 'replace@with.email.address.net';
-my $smtp_server = 'your.relay.mail.server.net';
+# 	$Id: send_email.pl,v 1.3 2008/05/12 12:23:45 UltraDM Exp $
+
+my $sender      = q{replace@with.email.address.net};
+my $recipient   = q{replace@with.email.address.net};
+my $smtp_server = q{your.relay.mail.server.net};
 my $smtp_port   = 25;
 
 # use the library from the kit
 # remove the line below if you're using the system wide installed
 # PoCoClSMTP
-use lib '../lib';
+use lib q{../lib};
 
 use Data::Dumper;    # I always include this ;-)
 use Email::MIME::Creator;
@@ -27,12 +30,12 @@ use POE::Component::Client::SMTP;
 
 # main()
 POE::Session->create(
-    inline_states => {
-        _start            => \&start_main_session,
-        send_mail         => \&send_mail_from_main_session,
-        send_mail_success => \&send_mail_success,
-        send_mail_failure => \&send_mail_failure,
-        _stop             => \&stop_main_session,
+    q{inline_states} => {
+        q{_start}            => \&start_main_session,
+        q{send_mail}         => \&send_mail_from_main_session,
+        q{send_mail_success} => \&send_mail_success,
+        q{send_mail_failure} => \&send_mail_failure,
+        q{_stop}             => \&stop_main_session,
     }
 );
 
@@ -43,7 +46,7 @@ POE::Kernel->run();
 sub start_main_session {
 
     #fire the things up
-    $_[KERNEL]->yield("send_mail");
+    $_[KERNEL]->yield(q{send_mail});
 }
 
 sub send_mail_from_main_session {
@@ -55,28 +58,28 @@ sub send_mail_from_main_session {
     $email =~ s/\n/\r\n/g;
 
     POE::Component::Client::SMTP->send(
-        From         => $sender,
-        To           => $recipient,
-        Server       => $smtp_server,
-        Port         => $smtp_port,
-        Body         => $email,
-        SMTP_Success => 'send_mail_success',
-        SMTP_Failure => 'send_mail_failure',
+        q{From}         => $sender,
+        q{To}           => $recipient,
+        q{Server}       => $smtp_server,
+        q{Port}         => $smtp_port,
+        q{Body}         => $email,
+        q{SMTP_Success} => q{send_mail_success},
+        q{SMTP_Failure} => q{send_mail_failure},
     );
 }
 
 sub send_mail_success {
-    print "Success\n";
+    print qq{Success\n};
 }
 
 sub send_mail_failure {
     my $fail = $_[ARG1];
     print Dumper($fail);
-    print "Failure\n";
+    print qq{Failure\n};
 }
 
 sub stop_main_session {
-    print "End ...\n";
+    print qq{End ...\n};
 }
 
 # Email Creation Part
@@ -84,37 +87,37 @@ sub stop_main_session {
 # You may use any method that suits you (I usually create the messages by hand
 # ;-) )
 sub create_message {
-    my $attachment_file = "text_mail_attachment.txt";
+    my $attachment_file = qq{text_mail_attachment.txt};
 
     my $email;
     my @parts;
 
     @parts = (
         Email::MIME->create(
-            attributes => {
-                filename     => "text.txt",
-                content_type => "text/plain",
-                encoding     => "quoted-printable",
-                name         => "Example attachment",
+            q{attributes} => {
+                q{filename}     => q{text.txt},
+                q{content_type} => q{text/plain},
+                q{encoding}     => q{quoted-printable},
+                q{name}         => q{Example attachment},
             },
-            body => io($attachment_file)->all,
+            q{body} => io($attachment_file)->all,
         ),
         Email::MIME->create(
-            attributes => {
-                content_type => "text/plain",
-                disposition  => "attachment",
-                charser      => "US-ASCII",
+            q{attributes} => {
+                q{content_type} => q{text/plain},
+                q{disposition}  => q{attachment},
+                q{charser}      => q{US-ASCII},
             },
-            body => "Howdy!",
+            q{body} => q{Howdy!},
         ),
     );
 
     $email = Email::MIME->create(
-        header => [
-            From => $sender,
-            To   => $recipient,
+        q{header} => [
+            q{From} => $sender,
+            q{To}   => $recipient,
         ],
-        parts => [@parts],
+        q{parts} => [@parts],
     );
 
     # return the message

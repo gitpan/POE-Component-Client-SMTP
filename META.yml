@@ -1,6 +1,6 @@
 ---
 name: POE-Component-Client-SMTP
-version: 0.18
+version: 0.19
 author:
   - 'George Nistorica <ultadm@cpan.org>'
 abstract: Asynchronous mail sending with POE
@@ -13,6 +13,7 @@ requires:
   POE: 0.26
   POE::Filter::Line: 0
   POE::Filter::Stream: 0
+  POE::Filter::Transparent::SMTP: 0
   POE::Wheel::ReadWrite: 0
   POE::Wheel::SocketFactory: 0
   Socket: 0
@@ -21,7 +22,7 @@ requires:
 provides:
   POE::Component::Client::SMTP:
     file: lib/POE/Component/Client/SMTP.pm
-    version: 0.18
+    version: 0.19
 generated_by: Module::Build version 0.2808
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.2.html

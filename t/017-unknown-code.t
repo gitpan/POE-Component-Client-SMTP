@@ -1,19 +1,22 @@
-#!/usr/bin/perl -w
+#!/usr/bin/env perl
 
-# Copyright (c) 2005-2007 George Nistorica
+# Copyright (c) 2005-2008 George Nistorica
 # All rights reserved.
 # This file is part of POE::Component::Client::SMTP
 # POE::Component::Client::SMTP is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.  See the LICENSE
 # file that comes with this distribution for more details.
 
-use strict;
+# 	$Id: 017-unknown-code.t,v 1.3 2008/05/12 07:29:36 UltraDM Exp $
 
-use lib '../lib';
+use strict;
+use warnings;
+
+use lib q{../lib};
 use Test::More;
 eval { require POE::Component::Server::TCP; };
 if ($@) {
-    plan skip_all => "POE::Component::Server::TCP is not installed";
+    plan skip_all => q{POE::Component::Server::TCP is not installed};
 }
 else {
     plan tests => 1;
@@ -24,104 +27,101 @@ use Socket;
 use POE;
 use POE::Component::Client::SMTP;
 
-my $test = 'undef';
+my $test = q{undef};
 
 my $smtp_message;
-my @recipients;
+my $recipient;
 my $from;
 my $debug = 0;
 
 $smtp_message = create_smtp_message();
 
-#@recipients = qw(
-#    'george@localhost',
-#);
-my $recipient = 'george@localhost';
-$from = 'george@localhost';
+$recipient = q{george@localhost};
+$from      = q{george@localhost};
 
 ##### SMTP server vars
 my $port                  = 25252;
-my $EOL                   = "\015\012";
+my $EOL                   = qq{\015\012};
 my @smtp_server_responses = (
-    "220 localhost ESMTP POE::Component::Client::SMTP Test Server",
-    "250-localhost$EOL"
-      . "250-PIPELINING$EOL"
-      . "250-SIZE 250000000$EOL"
-      . "250-VRFY$EOL"
-      . "250-ETRN$EOL"
-      . "250 8BITMIME",
-    "250 Ok",                                 # mail from
-    "250 Ok",                                 # rcpt to:
-    "700 End data with <CR><LF>.<CR><LF>",    # data
-    "250 Ok: queued as 549B14484F",           # end data
-    "221 Bye",                                # quit
+    q{220 localhost ESMTP POE::Component::Client::SMTP Test Server},
+    qq{250-localhost$EOL}
+      . qq{250-PIPELINING$EOL}
+      . qq{250-SIZE 250000000$EOL}
+      . qq{250-VRFY$EOL}
+      . qq{250-ETRN$EOL}
+      . q{250 8BITMIME},
+    q{250 Ok},                                 # mail from
+    q{250 Ok},                                 # rcpt to:
+    q{700 End data with <CR><LF>.<CR><LF>},    # data
+    q{250 Ok: queued as 549B14484F},           # end data
+    q{221 Bye},                                # quit
 );
 
 POE::Component::Server::TCP->new(
-    Port                  => $port,
-    Address               => "localhost",
-    Domain                => AF_INET,
-    Alias                 => "smtp_server",
-    Error                 => \&error_handler,               # Optional.
-    ClientInput           => \&handle_client_input,         # Required.
-    ClientConnected       => \&handle_client_connect,       # Optional.
-    ClientDisconnected    => \&handle_client_disconnect,    # Optional.
-    ClientError           => \&handle_client_error,         # Optional.
-    ClientFlushed         => \&handle_client_flush,         # Optional.
-    ClientFilter          => "POE::Filter::Line",           # Optional.
-    ClientInputFilter     => "POE::Filter::Line",           # Optional.
-    ClientOutputFilter    => "POE::Filter::Line",           # Optional.
-    ClientShutdownOnError => 1,                             #
+    q{Port}                  => $port,
+    q{Address}               => q{localhost},
+    q{Domain}                => AF_INET,
+    q{Alias}                 => q{smtp_server},
+    q{Error}                 => \&error_handler,               # Optional.
+    q{ClientInput}           => \&handle_client_input,         # Required.
+    q{ClientConnected}       => \&handle_client_connect,       # Optional.
+    q{ClientDisconnected}    => \&handle_client_disconnect,    # Optional.
+    q{ClientError}           => \&handle_client_error,         # Optional.
+    q{ClientFlushed}         => \&handle_client_flush,         # Optional.
+    q{ClientFilter}          => q{POE::Filter::Line},          # Optional.
+    q{ClientInputFilter}     => q{POE::Filter::Line},          # Optional.
+    q{ClientOutputFilter}    => q{POE::Filter::Line},          # Optional.
+    q{ClientShutdownOnError} => 1,                             #
 );
 
 POE::Session->create(
-    inline_states => {
-        _start             => \&start_session,
-        _stop              => \&stop_session,
-        send_mail          => \&spawn_pococlsmt,
-        pococlsmtp_success => \&smtp_send_success,
-        pococlsmtp_failure => \&smtp_send_failure,
+    q{inline_states} => {
+        q{_start}             => \&start_session,
+        q{_stop}              => \&stop_session,
+        q{send_mail}          => \&spawn_pococlsmt,
+        q{pococlsmtp_success} => \&smtp_send_success,
+        q{pococlsmtp_failure} => \&smtp_send_failure,
     },
 );
 
 POE::Kernel->run();
 
-is( $test, 1, "Unknonw SMTP code" );
-diag("7XY Code");
+is( $test, 1, q{Unknonw SMTP code} );
+diag(q{7XY Code});
 
 sub start_session {
-    $_[KERNEL]->yield("send_mail");
+    $_[KERNEL]->yield(q{send_mail});
 }
 
 sub spawn_pococlsmt {
     POE::Component::Client::SMTP->send(
-        From         => $from,
-        To           => \@recipients,
-        SMTP_Success => 'pococlsmtp_success',
-        SMTP_Failure => 'pococlsmtp_failure',
-        Server       => 'localhost',
-        Port         => $port,
-        Body         => $smtp_message,
-        Context      => "test context",
-        Debug        => 0,
+        q{From}         => $from,
+        q{To}           => $recipient,
+        q{SMTP_Success} => q{pococlsmtp_success},
+        q{SMTP_Failure} => q{pococlsmtp_failure},
+        q{Server}       => q{localhost},
+        q{Port}         => $port,
+        q{Body}         => $smtp_message,
+        q{Context}      => q{test context},
+        q{Debug}        => 0,
     );
 }
 
 sub stop_session {
 
     # stop server
-    $_[KERNEL]->call( smtp_server => "shutdown" );
+    $_[KERNEL]->call( q{smtp_server} => q{shutdown} );
 }
 
 sub smtp_send_success {
     my ( $arg0, $arg1 ) = @_[ ARG0, ARG1 ];
-    print "ARG0, ", Dumper($arg0), "\nARG1, ", Dumper($arg1) if $debug;
+    print q{ARG0, }, Dumper($arg0), qq{\nARG1, }, Dumper($arg1) if $debug;
     $test = 0;
 }
 
 sub smtp_send_failure {
     my ( $arg0, $arg1 ) = @_[ ARG0, ARG1 ];
-    print "ARG0, ", Dumper($arg0), "\nARG1, ", Dumper($arg1) if $debug;
+    print q{ARG0, }, Dumper($arg0), qq{\nARG1, }, Dumper($arg1) if $debug;
     $test = 1;
 }
 
@@ -138,15 +138,15 @@ EOB
 }
 
 sub error_handler {
-    carp "Something nasty happened";
+    carp q{Something nasty happened};
     exit 100;
 }
 
 sub handle_client_input {
     my ( $heap, $input ) = @_[ HEAP, ARG0 ];
 
-    if ( $input =~ /^(helo|ehlo|mail from:|rcpt to:|data|\.|quit)/i ) {
-        print "$input\n" if $debug;
+    if ( $input =~ /^(helo|ehlo|mail from:|rcpt to:|data|\.|quit)/io ) {
+        print qq{$input\n} if $debug;
         $heap->{'client'}->put( shift @smtp_server_responses );
     }
 }

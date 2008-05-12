@@ -1,8 +1,10 @@
-# Copyright (c) 2005 - 2007 George Nistorica
+# Copyright (c) 2005 - 2008 George Nistorica
 # All rights reserved.
 # This program is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.  See the LICENSE
 # file that comes with this distribution for more details.
+
+# 	$Id: SMTP.pm,v 1.22 2008/05/12 12:21:09 UltraDM Exp $
 
 package POE::Component::Client::SMTP;
 
@@ -12,15 +14,16 @@ package POE::Component::Client::SMTP;
 use warnings;
 use strict;
 
-our $VERSION = '0.18';
+our $VERSION = q{0.19};
 
 use Data::Dumper;
 use Carp;
 use Socket;
 use Symbol qw( gensym );
-use POE qw(Wheel::SocketFactory Wheel::ReadWrite Filter::Line Filter::Stream);
+use POE
+  qw(Wheel::SocketFactory Wheel::ReadWrite Filter::Line Filter::Stream Filter::Transparent::SMTP);
 
-my $EOL = "\015\012";
+my $EOL = qq{\015\012};
 
 sub send {
     _create(@_);
@@ -33,50 +36,48 @@ sub _create {
     my %parameters = @_;
 
     # some checking
-    croak 'not an object method' if ( ref $class );
+    croak q{not an object method} if ( ref $class );
 
     # The actual Object;
     my $self = bless _fill_data( \%parameters ), $class;
 
     # store the caller
-    $self->parameter( 'Caller_Session', $poe_kernel->get_active_session() );
+    $self->parameter( q{Caller_Session}, $poe_kernel->get_active_session() );
 
     # Spawn the PoCoClient::SMTP session
     POE::Session->create(
-        object_states => [
+        q{object_states} => [
             $self => {
-                _start   => '_pococlsmtp_start',
-                _stop    => '_pococlsmtp_stop',
-                _default => '_pococlsmtp_default',
+                q{_start}   => q{_pococlsmtp_start},
+                q{_stop}    => q{_pococlsmtp_stop},
+                q{_default} => q{_pococlsmtp_default},
 
                 # public available events
-                smtp_shutdown => '_pococlsmtp_shutdown',
-                smtp_progress => '_pococlsmtp_progress',
+                q{smtp_shutdown} => q{_pococlsmtp_shutdown},
+                q{smtp_progress} => q{_pococlsmtp_progress},
 
                 # internal events SMTP codes and stuff
-                smtp_send => '_pococlsmtp_send',
+                q{smtp_send} => q{_pococlsmtp_send},
 
                 # network related
-                connection_established => '_pococlsmtp_conn_est',
-                connection_error       => '_pococlsmtp_conn_err',
-                smtp_session_input     => '_pococlsmtp_input',
-                smtp_session_error     => '_pococlsmtp_error',
-                smtp_timeout_event     => '_smtp_timeout_handler',
+                q{connection_established} => q{_pococlsmtp_conn_est},
+                q{connection_error}       => q{_pococlsmtp_conn_err},
+                q{smtp_session_input}     => q{_pococlsmtp_input},
+                q{smtp_session_error}     => q{_pococlsmtp_error},
+                q{smtp_timeout_event}     => q{_smtp_timeout_handler},
 
-                _build_commands        => '_build_commands',
-                _build_expected_states => '_build_expected_states',
+                q{_build_commands}        => q{_build_commands},
+                q{_build_expected_states} => q{_build_expected_states},
 
                 # return events
-                return_failure => '_pococlsmtp_return_error_event',
+                q{return_failure} => q{_pococlsmtp_return_error_event},
 
                 # file slurping
-                _get_file               => '_get_file',
-                _slurp_file_input_event => '_slurp_file_input_event',
-                _slurp_file_error_event => '_slurp_file_error_event',
+                q{_get_file}               => q{_get_file},
+                q{_slurp_file_input_event} => q{_slurp_file_input_event},
+                q{_slurp_file_error_event} => q{_slurp_file_error_event},
             },
         ],
-
-        #        options => { trace => 1 },
     );
     return 1;
 }
@@ -87,11 +88,11 @@ sub _create {
 sub _pococlsmtp_start {
     my ( $kernel, $self ) = @_[ KERNEL, OBJECT ];
 
-    carp 'CURRENT STATE: _pococlsmtp_start ' if $self->debug;
+    carp q{CURRENT STATE: _pococlsmtp_start} if $self->debug;
 
     # in case there's no alias, use refcount
-    if ( $self->parameter('Alias') ) {
-        $kernel->alias_set( $self->parameter('Alias') );
+    if ( $self->parameter(q{Alias}) ) {
+        $kernel->alias_set( $self->parameter(q{Alias}) );
     }
     else {
         $kernel->refcount_increment(
@@ -99,7 +100,7 @@ sub _pococlsmtp_start {
     }
 
     # build expected states
-    $kernel->yield('_build_expected_states');
+    $kernel->yield(q{_build_expected_states});
 
     return 1;
 }
@@ -107,17 +108,14 @@ sub _pococlsmtp_start {
 # event: _stop
 sub _pococlsmtp_stop {
     my ( $kernel, $self ) = @_[ KERNEL, OBJECT ];
-
-    carp 'CURRENT STATE _pococlsmtp_stop' if $self->debug;
-
+    carp q{CURRENT STATE _pococlsmtp_stop} if $self->debug;
     return 1;
 }
 
 # event: _default
 sub _pococlsmtp_default {
     my ($self) = $_[OBJECT];
-    carp 'CURRENT STATE _pococlsmtp_default' if $self->debug;
-
+    carp q{CURRENT STATE _pococlsmtp_default} if $self->debug;
     return 1;
 }
 
@@ -125,28 +123,29 @@ sub _pococlsmtp_default {
 # event: smtp_send
 sub _pococlsmtp_send {
     my ( $kernel, $self ) = @_[ KERNEL, OBJECT ];
+    my ( %options, $wheel );
 
-    carp 'CURRENT STATE: _pococlsmtp_send' if $self->debug;
+    carp q{CURRENT STATE: _pococlsmtp_send} if $self->debug;
 
-    my %options = (
-        RemoteAddress  => $self->parameter('Server'),
-        RemotePort     => $self->parameter('Port'),
-        SocketDomain   => AF_INET,
-        SocketType     => SOCK_STREAM,
-        SocketProtocol => 'tcp',
-        Reuse          => 'yes',
-        SuccessEvent   => 'connection_established',
-        FailureEvent   => 'connection_error',
+    %options = (
+        q{RemoteAddress}  => $self->parameter(q{Server}),
+        q{RemotePort}     => $self->parameter(q{Port}),
+        q{SocketDomain}   => AF_INET,
+        q{SocketType}     => SOCK_STREAM,
+        q{SocketProtocol} => q{tcp},
+        q{Reuse}          => q{yes},
+        q{SuccessEvent}   => q{connection_established},
+        q{FailureEvent}   => q{connection_error},
     );
 
     # set BindAddress and BindPort if any.
-    for my $opt ( 'BindAddress', 'BindPort' ) {
+    for my $opt ( q{BindAddress}, q{BindPort} ) {
         if ( defined $self->parameter($opt) ) {
             $options{$opt} = $self->parameter($opt);
         }
     }
 
-    my $wheel = POE::Wheel::SocketFactory->new( %options, );
+    $wheel = POE::Wheel::SocketFactory->new( %options, );
 
     # store the wheel
     $self->store_sf_wheel($wheel);
@@ -158,25 +157,27 @@ sub _pococlsmtp_send {
 # event: SuccessEvent
 sub _pococlsmtp_conn_est {
     my ( $kernel, $self, $socket ) = @_[ KERNEL, OBJECT, ARG0 ];
+    my ( $wheel, $alarm );
 
-    carp 'CURRENT STATE: _pococlsmtp_conn_est' if $self->debug;
+    carp q{CURRENT STATE: _pococlsmtp_conn_est} if $self->debug;
 
-    my $wheel = POE::Wheel::ReadWrite->new(
-        Handle       => $socket,
-        InputFilter  => POE::Filter::Line->new( Literal => $EOL ),
-        OutputFilter => POE::Filter::Stream->new(),
-        InputEvent   => 'smtp_session_input',
-        ErrorEvent   => 'smtp_session_error',
+    $wheel = POE::Wheel::ReadWrite->new(
+        q{Handle}       => $socket,
+        q{InputFilter}  => POE::Filter::Transparent::SMTP->new(),
+        q{OutputFilter} => POE::Filter::Transparent::SMTP->new(),
+        q{InputEvent}   => q{smtp_session_input},
+        q{ErrorEvent}   => q{smtp_session_error},
     );
 
     # set the alarm for preventing timeouts
-    my $alarm =
-      $kernel->delay_set( 'smtp_timeout_event', $self->parameter('Timeout') );
+    $alarm =
+      $kernel->delay_set( q{smtp_timeout_event}, $self->parameter(q{Timeout}) );
 
     # store the wheel
     $self->store_rw_wheel($wheel);
 
-    # store the alarm
+    # store the alarm; this is used while 'talking' with the SMTP server, during
+    # _pococlsmtp_input
     $self->_alarm($alarm);
 
     return 1;
@@ -187,9 +188,11 @@ sub _pococlsmtp_conn_est {
 sub _pococlsmtp_conn_err {
     my ( $kernel, $self ) = @_[ KERNEL, OBJECT ];
 
-    carp 'CURRENT STATE: _pococlsmtp_conn_err' if $self->debug;
-    $kernel->yield( 'return_failure',
-        { 'POE::Wheel::SocketFactory' => [ @_[ ARG0 .. ARG3 ] ] } );
+    carp q{CURRENT STATE: _pococlsmtp_conn_err} if $self->debug;
+
+# send back to the caller the error which is generated during the connection establishing
+    $kernel->yield( q{return_failure},
+        { q{POE::Wheel::SocketFactory} => [ @_[ ARG0 .. ARG3 ] ] } );
 
     return 1;
 }
@@ -199,16 +202,17 @@ sub _pococlsmtp_conn_err {
 # event: smtp_session_input
 sub _pococlsmtp_input {
     my ( $kernel, $self, $input, $wheel_id ) = @_[ KERNEL, OBJECT, ARG0, ARG1 ];
+    my ( $smtp_code, $smtp_string, $to_send );
 
-    carp 'CURRENT STATE: _pococlsmtp_input' if $self->debug;
+    carp q{CURRENT STATE: _pococlsmtp_input} if $self->debug;
 
     # reset alarm
-    $kernel->delay_adjust( $self->_alarm, $self->parameter('Timeout'), );
+    $kernel->delay_adjust( $self->_alarm, $self->parameter(q{Timeout}), );
 
-    print "INPUT: $input\n" if $self->debug;
+    if ( $self->parameter(q{TransactionLog}) ) {
 
-    if ( $self->parameter('TransactionLog') ) {
-        $self->_transaction_log( '<- ' . $input );
+        # add to the transaction log
+        $self->_transaction_log( q{<- } . $input );
     }
 
     # allright, received something in the form XXX text
@@ -217,57 +221,73 @@ sub _pococlsmtp_input {
                     ^(\d{3})    # first 3 digits
                     \s+
                     (.*)$       # SMTP message corresponding to the SMTP code
-                    /x
+                    /xo
+        or $input =~ /
+			 ^(\d{3})
+			 \s*$ # in case there's no status message  ...
+		     /xo
       )
     {
 
         # is the SMTP server letting us know there's a problem?
-        my ( $smtp_code, $smtp_string ) = ( $1, $2 );
+        ( $smtp_code, $smtp_string ) = ( $1, $2 );
+        if ( not defined $smtp_string ) {
+
+            # in case there's no status message from server
+            $smtp_string = q{Inserted by PoCoClSMTP: }
+              . q{Server didn't sent any status message along with the status code!};
+        }
+        if ( not defined $smtp_code ) {
+            $smtp_code = q{Inserted by PoCoClSMTP: }
+              . q{Server didn't replied with a status code as expected!};
+        }
         if ( $smtp_code =~ /^(1|2|3)\d{2}$/ ) {
 
             # we're ok
             # and also stupid, don't know estmp, don't know 1XY codes
-            my $to_send = $self->command;
+            $to_send = $self->command;
             if ( not defined $to_send ) {
+
+     # this is the end of the 'commands' we had stored for sending to the server
                 $kernel->post(
-                    $self->parameter('Caller_Session'),
-                    $self->parameter('SMTP_Success'),
-                    $self->parameter('Context'),
+                    $self->parameter(q{Caller_Session}),
+                    $self->parameter(q{SMTP_Success}),
+                    $self->parameter(q{Context}),
                     $self->_transaction_log(),
                 );
                 $self->_smtp_component_destroy;
             }
             else {
-                print "TO SEND: $to_send\n" if $self->debug;
-                if ( $self->parameter('TransactionLog') ) {
-                    $self->_transaction_log( '-> ' . $to_send );
+                carp qq{PoCoClSMTP TO SEND: "$to_send"} if $self->debug;
+                if ( $self->parameter(q{TransactionLog}) ) {
+                    $self->_transaction_log( q{-> } . $to_send );
                 }
-                $self->store_rw_wheel->put( $to_send . $EOL );
+		$self->store_rw_wheel->put( $to_send );
             }
         }
         elsif (
             $smtp_code =~ /
                                 ^(4|5)\d{2}$    # look for error codes (starting with 4 or 5)
-                                /x
+                                /xo
           )
         {
-            carp "Server Error! $input \n" if $self->debug;
+            carp qq{Server Error! $input } if $self->debug;
 
             # the server responder with 4XY or 5XY code;
             # while 4XY is temporary failure, 5XY is permanent
             # it's unclear to me whether PoCoClientSMTP should retry in case of
             # 4XY or the user should. In case is PoCoClientSMTP's job, then I
             # should define for how many times and what interval
-            $kernel->yield( 'return_failure',
-                { 'SMTP_Server_Error' => $input } );
+            $kernel->yield( q{return_failure},
+                { q{SMTP_Server_Error} => $input } );
         }
         else {
 
             # oops! we shouldn't end-up here unless the server is buggy
-            carp "Error! I don't know the SMTP Code! $input \n"
+            carp qq{Error! I don't know the SMTP Code! "$input"}
               if $self->debug;
-            $kernel->yield( 'return_failure',
-                { 'SMTP_Server_Error' => $input } );
+            $kernel->yield( q{return_failure},
+                { q{SMTP_Server_Error} => $input } );
         }
     }
     elsif (
@@ -276,17 +296,17 @@ sub _pococlsmtp_input {
                         ^(\d{3})    # 3 digits
                         \-          # separator
                         (.*)$       # capability
-                    /x
+                    /xo
       )
     {
-        if ( $self->parameter('Debug') > 1 ) {
-            carp "ESMTP Server capability: $input";
+        if ( $self->parameter(q{Debug}) > 1 ) {
+            carp qq{ESMTP Server capability: "$input"};
         }
     }
     else {
-        carp "Received unknown string type from SMTP server, \"$input\""
+        carp qq{Received unknown string type from SMTP server, "$input"}
           if $self->debug;
-        $kernel->yield( 'return_failure', { 'SMTP_Server_Error' => $input } );
+        $kernel->yield( q{return_failure}, { q{SMTP_Server_Error} => $input } );
     }
 
     return 1;
@@ -296,53 +316,46 @@ sub _pococlsmtp_input {
 # event: ErrorEvent
 sub _pococlsmtp_error {
     my ( $kernel, $self ) = @_[ KERNEL, OBJECT ];
-
-    carp 'CURRENT STATE: _pococlsmtp_error' if $self->debug;
-    $kernel->yield( 'return_failure',
-        { 'POE::Wheel::ReadWrite' => [ @_[ ARG0 .. ARG3 ] ] } );
-
+    carp q{CURRENT STATE: _pococlsmtp_error} if $self->debug;
+    $kernel->yield( q{return_failure},
+        { q{POE::Wheel::ReadWrite} => [ @_[ ARG0 .. ARG3 ] ] } );
     return 1;
 }
 
 # event: smtp_timeout_event
 sub _smtp_timeout_handler {
     my ( $kernel, $self ) = @_[ KERNEL, OBJECT ];
-
-    carp 'CURRENT STATE: _smtp_timeout_handler' if $self->debug;
-    $kernel->yield( 'return_failure',
-        { 'Timeout' => $self->parameter('Timeout') } );
-
+    carp q{CURRENT STATE: _smtp_timeout_handler} if $self->debug;
+    $kernel->yield( q{return_failure},
+        { q{Timeout} => $self->parameter(q{Timeout}) } );
     return 1;
 }
 
 # event: return_failure
 sub _pococlsmtp_return_error_event {
     my ( $kernel, $self, $arg, $session ) = @_[ KERNEL, OBJECT, ARG0, SESSION ];
-
-    carp 'CURRENT STATE: _pococlsmtp_return_error_event' if $self->debug;
-
+    carp q{CURRENT STATE: _pococlsmtp_return_error_event} if $self->debug;
     $kernel->post(
-        $self->parameter('Caller_Session'),
-        $self->parameter('SMTP_Failure'),
-        $self->parameter('Context'),
+        $self->parameter(q{Caller_Session}),
+        $self->parameter(q{SMTP_Failure}),
+        $self->parameter(q{Context}),
         $arg, $self->_transaction_log,
     );
     $self->_smtp_component_destroy;
-
     return 1;
 }
 
 sub _smtp_component_destroy {
     my $self = shift;
 
-    carp 'CURRENT STATE: _smtp_component_destroy' if $self->debug;
+    carp q{CURRENT STATE: _smtp_component_destroy} if $self->debug;
 
     # remove alarms set for the Timeout
     $poe_kernel->alarm_remove_all();
 
     # in case there's no alias, use refcount
-    if ( $self->parameter('Alias') ) {
-        $poe_kernel->alias_remove( $self->parameter('Alias') );
+    if ( $self->parameter(q{Alias}) ) {
+        $poe_kernel->alias_remove( $self->parameter(q{Alias}) );
     }
     else {
         $poe_kernel->refcount_decrement(
@@ -380,111 +393,105 @@ sub _fill_data {
 
     # defaults
     my %default = (
-        To           => 'root@localhost',
-        From         => 'root@localhost',
-        Body         => q{},
-        Server       => 'localhost',
-        Port         => 25,
-        Timeout      => 30,
-        MyHostname   => 'localhost',
-        BindAddress  => undef,
-        BindPort     => undef,
-        Debug        => 0,
-        Alias        => undef,
-        Context      => undef,
-        SMTP_Success => undef,
-        SMTP_Failure => undef,
-        Auth         => {
-            'mechanism' => undef,
-            'user'      => undef,
-            'pass'      => undef,
+        q{To}           => q{root@localhost},
+        q{From}         => q{root@localhost},
+        q{Body}         => q{},
+        q{Server}       => q{localhost},
+        q{Port}         => 25,
+        q{Timeout}      => 30,
+        q{MyHostname}   => q{localhost},
+        q{BindAddress}  => undef,
+        q{BindPort}     => undef,
+        q{Debug}        => 0,
+        q{Alias}        => undef,
+        q{Context}      => undef,
+        q{SMTP_Success} => undef,
+        q{SMTP_Failure} => undef,
+        q{Auth}         => {
+            q{mechanism} => undef,
+            q{user}      => undef,
+            q{pass}      => undef,
         },
-        MessageFile    => undef,
-        FileHandle     => undef,
-        TransactionLog => undef,
+        q{MessageFile}    => undef,
+        q{FileHandle}     => undef,
+        q{TransactionLog} => undef,
     );
 
     #check parameters and set them to defaults if they don't exist
     for my $parameter ( keys %default ) {
         if ( exists $parameters->{$parameter} ) {
-            $smtp_hash->{'Parameter'}->{$parameter} = $parameters->{$parameter};
+            $smtp_hash->{q{Parameter}}->{$parameter} =
+              $parameters->{$parameter};
         }
         else {
-            $smtp_hash->{'Parameter'}->{$parameter} = $default{$parameter};
+            $smtp_hash->{q{Parameter}}->{$parameter} = $default{$parameter};
         }
     }
 
     # add supported auth methods
     # for this poco
-    $smtp_hash->{'Auth_Mechanism'} = ['PLAIN'];
+    $smtp_hash->{q{Auth_Mechanism}} = [q{PLAIN}];
 
     return $smtp_hash;
 }
 
 # accessor/mutator
 sub parameter {
-    my $self      = shift;
-    my $parameter = shift;
-    my $value     = shift;
+    my ( $self, $parameter, $value ) = ( shift, shift, shift );
 
-    croak 'This is an object method only' if ( not ref $self );
-    croak 'need a parameter!'             if ( not defined $parameter );
+    croak q{This is an object method only} if ( not ref $self );
+    croak q{need a parameter!} if ( not defined $parameter );
 
     if ( defined $value ) {
-        $self->{'Parameter'}->{"$parameter"} = $value;
+        $self->{q{Parameter}}->{qq{$parameter}} = $value;
     }
 
-    return $self->{'Parameter'}->{"$parameter"};
+    return $self->{q{Parameter}}->{qq{$parameter}};
 }
 
 # accessor/mutator
+# stores and returns the SocketFactory wheel
 sub store_sf_wheel {
-    my $self  = shift;
-    my $wheel = shift;
-
-    croak 'not a class method' if ( not ref $self );
-
+    my ( $self, $wheel ) = ( shift, shift );
+    croak q{not a class method} if ( not ref $self );
     if ( defined $wheel ) {
-        $self->{'Wheel'}->{'SF'}->{$wheel} = $wheel;
+        $self->{q{Wheel}}->{q{SF}}->{$wheel} = $wheel;
     }
-
-    return $self->{'Wheel'}->{'SF'};
+    return $self->{q{Wheel}}->{q{SF}};
 }
 
+# if specified which SocketFactory wheel to delete it deletes it;
+# if not specified, it deletes ALL SocketFactory wheels
 sub delete_sf_wheel {
-    my $self  = shift;
-    my $wheel = shift;
-
-    croak 'not a class method' if ( not ref $self );
-
+    my ( $self, $wheel ) = ( shift, shift );
+    croak q{not a class method} if ( not ref $self );
     if ( defined $wheel ) {
-        return delete $self->{'Wheel'}->{'SF'}->{$wheel};
+        return delete $self->{q{Wheel}}->{q{SF}}->{$wheel};
     }
     else {
-        return delete $self->{'Wheel'}->{'SF'};
+        return delete $self->{q{Wheel}}->{q{SF}};
     }
 }
 
 sub store_rw_wheel {
-    my $self  = shift;
-    my $wheel = shift;
+    my ( $self, $wheel ) = ( shift, shift );
     my $ret;
 
-    croak 'not a class method' if ( not ref $self );
+    croak q{not a class method} if ( not ref $self );
 
     if ( defined $wheel ) {
-        $self->{'Wheel'}->{'RW'}->{$wheel} = $wheel;
-        $ret = $self->{'Wheel'}->{'RW'}->{$wheel};
+        $self->{q{Wheel}}->{q{RW}}->{$wheel} = $wheel;
+        $ret = $self->{q{Wheel}}->{q{RW}}->{$wheel};
     }
     else {
-        foreach my $key ( keys %{ $self->{'Wheel'}->{'RW'} } ) {
-            $ret = $self->{'Wheel'}->{'RW'}->{$key};
+        foreach my $key ( keys %{ $self->{q{Wheel}}->{q{RW}} } ) {
+            $ret = $self->{q{Wheel}}->{q{RW}}->{$key};
             last;
         }
     }
 
     if ( not defined $ret ) {
-        $ret = $self->{'Wheel'}->{'RW'};
+        $ret = $self->{q{Wheel}}->{q{RW}};
     }
 
     return $ret;
@@ -492,61 +499,48 @@ sub store_rw_wheel {
 }
 
 sub delete_rw_wheel {
-    my $self  = shift;
-    my $wheel = shift;
-
-    croak 'not a class method' if ( not ref $self );
-
+    my ( $self, $wheel ) = ( shift, shift );
+    croak q{not a class method} if ( not ref $self );
     if ( defined $wheel ) {
-        return delete $self->{'Wheel'}->{$wheel};
+        return delete $self->{q{Wheel}}->{$wheel};
     }
     else {
-        return delete $self->{'Wheel'}->{'RW'};
+        return delete $self->{q{Wheel}}->{q{RW}};
     }
-
 }
 
 # accessor/mutator
 sub store_file_wheel {
     my $self  = shift;
     my $wheel = shift;
-
     croak 'not a class method' if ( not ref $self );
-
     if ( defined $wheel ) {
         $self->{'Wheel'}->{'FileWheel'}->{$wheel} = $wheel;
     }
-
     return $self->{'Wheel'}->{'FileWheel'};
 }
 
 sub delete_file_wheel {
-    my $self  = shift;
-    my $wheel = shift;
-
-    croak 'not a class method' if ( not ref $self );
-
+    my ( $self, $wheel ) = ( shift, shift );
+    croak q{not a class method} if ( not ref $self );
     if ( defined $wheel ) {
-        return delete $self->{'Wheel'}->{'FileWheel'}->{$wheel};
+        return delete $self->{q{Wheel}}->{q{FileWheel}}->{$wheel};
     }
     else {
-        return delete $self->{'Wheel'}->{'FileWheel'};
+        return delete $self->{q{Wheel}}->{q{FileWheel}};
     }
 }
 
 # accessor/mutator for the alarm
 sub _alarm {
-    my $self  = shift;
-    my $alarm = shift;
-
-    croak 'not a class method' if ( not ref $self );
-
+    my ( $self, $alarm ) = ( shift, shift );
+    croak q{not a class method} if ( not ref $self );
     if ( defined $alarm ) {
-        $self->{'session_alarm'} = $alarm;
+        $self->{q{session_alarm}} = $alarm;
         return $self;
     }
     else {
-        return $self->{'session_alarm'};
+        return $self->{q{session_alarm}};
     }
 }
 
@@ -554,21 +548,19 @@ sub _alarm {
 # return value is a list of expected values
 sub _state {
     my $self = shift;
-
-    croak 'not a class method' if ( not ref $self );
-
-    return shift @{ $self->{'State'} };
+    croak q{not a class method} if ( not ref $self );
+    return shift @{ $self->{q{State}} };
 }
 
 # build the expected list of states for every SMTP command we will be sending
 # event: _build_expected_states
 sub _build_expected_states {
     my ( $kernel, $self ) = @_[ KERNEL, OBJECT ];
-    my @states;
+    my ( @states, $rcpt_to );
 
-    croak 'not a class method' if ( not ref $self );
+    croak q{not a class method} if ( not ref $self );
 
-    carp 'CURRENT STATE: _build_expected_states' if $self->debug;
+    carp q{CURRENT STATE: _build_expected_states} if $self->debug;
 
     # initial state, the SMTP server greeting
     push @states, [ 220, 221 ];
@@ -578,16 +570,16 @@ sub _build_expected_states {
 
     # TODO: check if server only supports HELO (is this sane nowadays?)
 
-    if ( defined $self->parameter('Auth')->{'mechanism'} ) {
+    if ( defined $self->parameter(q{Auth})->{q{mechanism}} ) {
 
         # "auth" command
-        push @states, [235],;
+        push @states, [235];
     }
 
     # "mail from" command
     push @states, [ 250, 251 ],
 
-      my $rcpt_to = \$self->parameter('To');
+      $rcpt_to = \$self->parameter(q{To});
 
     # "rcpt to" command
     if ( ref( ${$rcpt_to} ) =~ /SCALAR/io ) {
@@ -611,64 +603,58 @@ sub _build_expected_states {
     # "quit" command
     push @states, [ 221, ];
 
-    $self->{'State'} = @states;
+    $self->{q{State}} = @states;
 
-    if (   defined $self->parameter('MessageFile')
-        or defined $self->parameter('FileHandle') )
+    if (   defined $self->parameter(q{MessageFile})
+        or defined $self->parameter(q{FileHandle}) )
     {
-        $kernel->yield('_get_file');
+        $kernel->yield(q{_get_file});
     }
     else {
-        $kernel->yield('_build_commands');
+        $kernel->yield(q{_build_commands});
     }
-
     return $self;
-
 }
 
 # event: _get_file
 # in case MessageFile is set, slurp the contents of the file into Body
 sub _get_file {
     my ( $self, $kernel ) = @_[ OBJECT, KERNEL ];
-    my $handle;
-    carp 'CURRENT STATE: _get_file ' if $self->debug;
+    my ( $handle, $wheel );
+    carp q{CURRENT STATE: _get_file} if $self->debug;
 
-    if ( not defined $self->parameter('FileHandle') ) {
-        $handle = _open_file( $self->parameter('MessageFile') );
+    if ( not defined $self->parameter(q{FileHandle}) ) {
+        $handle = _open_file( $self->parameter(q{MessageFile}) );
     }
     else {
-        $handle = $self->parameter('FileHandle');
+        $handle = $self->parameter(q{FileHandle});
     }
 
     if ( not defined $handle ) {
 
         # no file handle
-        carp 'File not found!' if $self->debug;
+        carp q{File not found!} if $self->debug;
         $kernel->yield(
-            'return_failure',
+            q{return_failure},
             {
-                MessageFile_Error =>
-                  [ $self->parameter('MessageFile') . ' not found!' ],
+                q{MessageFile_Error} =>
+                  [ $self->parameter(q{MessageFile}) . q{ not found!} ],
             },
         );
         return;
     }
 
-    if ( defined $self->parameter('Body') ) {
-        $self->parameter( 'Body', q{} );
+    if ( defined $self->parameter(q{Body}) ) {
+        $self->parameter( q{Body}, q{} );
     }
 
-
-    my $wheel = POE::Wheel::ReadWrite->new(
-        Handle     => $handle,
-        Filter     => POE::Filter::Stream->new,
-        InputEvent => '_slurp_file_input_event',
-        ErrorEvent => '_slurp_file_error_event',
-
+    $wheel = POE::Wheel::ReadWrite->new(
+        q{Handle}     => $handle,
+        q{Filter}     => POE::Filter::Stream->new,
+        q{InputEvent} => q{_slurp_file_input_event},
+        q{ErrorEvent} => q{_slurp_file_error_event},
     );
     $self->store_file_wheel($wheel);
-#     print "aaaaaaaaa\n";
-
     return 1;
 
 }
@@ -677,10 +663,8 @@ sub _get_file {
 # event: _slurp_file_input_event
 sub _slurp_file_input_event {
     my ( $self, $kernel, $input ) = @_[ OBJECT, KERNEL, ARG0 ];
-    carp 'CURRENT STATE: _slurp_file_input_event' if $self->debug;
-#     carp 'CURRENT STATE: _slurp_file_error_event';
-    $self->parameter( 'Body', $self->parameter('Body') . "$input" );
-
+    carp q{CURRENT STATE: _slurp_file_input_event} if $self->debug;
+    $self->parameter( q{Body}, $self->parameter(q{Body}) . $input );
     return 1;
 }
 
@@ -689,8 +673,7 @@ sub _slurp_file_input_event {
 sub _slurp_file_error_event {
     my ( $self, $kernel ) = @_[ OBJECT, KERNEL ];
     my ( $operation, $errnum, $errstr, $wheel_id ) = @_[ ARG0 .. ARG3 ];
-    carp 'CURRENT STATE: _slurp_file_error_event' if $self->debug;
-#     carp 'CURRENT STATE: _slurp_file_error_event';
+    carp q{CURRENT STATE: _slurp_file_error_event} if $self->debug;
     if ( $self->debug > 1 ) {
         carp <<"EOER";
 Operation: $operation
@@ -699,20 +682,19 @@ ERRSTR: $errstr
 WHEELID: $wheel_id
 EOER
     }
-
     if ( $errnum == 0 ) {
 
         # go to the next step, building the commands, now that we have
         # the Body filled with the file contents
-        $kernel->yield('_build_commands');
+        $kernel->yield(q{_build_commands});
     }
     else {
 
         # we've got an wheel error!
         $kernel->yield(
-            'return_failure',
+            q{return_failure},
             {
-                'POE::Wheel::ReadWrite' =>
+                q{POE::Wheel::ReadWrite} =>
                   [ $operation, $errnum, $errstr, $wheel_id ]
             }
         );
@@ -725,9 +707,9 @@ EOER
 sub command {
     my $self = shift;
 
-    croak 'not a class method' if ( not ref $self );
+    croak q{not a class method} if ( not ref $self );
 
-    return shift @{ $self->{'Command'} };
+    return shift @{ $self->{q{Command}} };
 
 }
 
@@ -735,15 +717,15 @@ sub command {
 # event: _build_commands
 sub _build_commands {
     my ( $kernel, $self, $session ) = @_[ KERNEL, OBJECT, SESSION ];
-    my @commands;
+    my ( @commands, $mechanism, $user, $pass, $rcpt_to, $body );
 
-    croak 'not a class method' if ( not ref $self );
+    croak q{not a class method} if ( not ref $self );
 
-    carp 'CURRENT STATE: _build_commands' if $self->debug;
+    carp q{CURRENT STATE: _build_commands} if $self->debug;
 
-    my $mechanism = $self->parameter('Auth')->{'mechanism'};
-    my $user      = $self->parameter('Auth')->{'user'};
-    my $pass      = $self->parameter('Auth')->{'pass'};
+    $mechanism = $self->parameter('Auth')->{'mechanism'};
+    $user      = $self->parameter('Auth')->{'user'};
+    $pass      = $self->parameter('Auth')->{'pass'};
     if ( defined $mechanism ) {
         if ( $self->_is_auth_supported_by_poco($mechanism) ) {
 
@@ -751,19 +733,19 @@ sub _build_commands {
             if ( defined $user and defined $pass ) {
                 my $encoded_data =
                   $self->_encode_auth( $mechanism, $user, $pass );
-                push @commands, 'EHLO ' . $self->parameter('MyHostname');
-                push @commands, 'AUTH PLAIN ' . $encoded_data;
+                push @commands, q{EHLO } . $self->parameter(q{MyHostname});
+                push @commands, q{AUTH PLAIN } . $encoded_data;
             }
             else {
 
                 # ERROR: user data not complete
                 # remove the next event which is smtp_send
-                $kernel->state('smtp_send');
+                $kernel->state(q{smtp_send});
                 $kernel->yield(
-                    'return_failure',
+                    q{return_failure},
                     {
-                        'Configure' =>
-                          'ERROR: You want AUTH but no USER/PASS given!'
+                        q{Configure} =>
+                          q{ERROR: You want AUTH but no USER/PASS given!}
                     }
                 );
             }
@@ -772,12 +754,12 @@ sub _build_commands {
 
             # ERROR: method unsupported by Component!
             # remove the next event which is smtp_send
-            $kernel->state('smtp_send');
+            $kernel->state(q{smtp_send});
             $kernel->yield(
                 q{return_failure},
                 {
-                    'Configure' =>
-                      "ERROR: Method unsupported by Component version: $VERSION"
+                    q{Configure} =>
+qq{ERROR: Method unsupported by Component version: $VERSION}
                 }
             );
         }
@@ -787,7 +769,7 @@ sub _build_commands {
     }
 
     push @commands, q{MAIL FROM: <} . $self->parameter(q{From}) . q{>};
-    my $rcpt_to = \$self->parameter('To');
+    $rcpt_to = \$self->parameter(q{To});
     if ( ref( ${$rcpt_to} ) =~ /ARRAY/io ) {
         for my $recipient ( @{ ${$rcpt_to} } ) {
             push @commands, q{RCPT TO: <} . $recipient . q{>};
@@ -801,41 +783,43 @@ sub _build_commands {
         # no ref, just a scalar ;-)
         push @commands, q{RCPT TO: <} . ${$rcpt_to} . q{>};
     }
+    $body = $self->parameter(q{Body});
+    if (    not $self->parameter(q{MessageFile})
+        and not $self->parameter(q{FileHandle}) )
+    {
 
-    push @commands, 'DATA';
+        # GRR
+        # create the body
+        my $filter = POE::Filter::Transparent::SMTP->new();
+        my $data = $filter->get( [$body] );
+        $data = $filter->put($data);
+        $body = join( q{}, @{$data} );
+        $body .= q{.};
+    }
+    else {
+        $body .= qq{$EOL.};
+    }
 
-    my $body = $self->parameter('Body');
-    $body .= "$EOL.";
-    push @commands, $body;
+    push @commands, q{DATA}, $body, q{QUIT};
 
-    #push @commands, '.',
-    push @commands, 'QUIT';
-
-    $self->{'Command'} = \@commands;
-
-    $kernel->yield('smtp_send');
+    $self->{q{Command}} = \@commands;
+    $kernel->yield(q{smtp_send});
 
     return $self;
 }
 
 sub debug {
-    my $self        = shift;
-    my $debug_level = shift;
-
-    croak 'not a class method' if ( not ref $self );
-
+    my ( $self, $debug_level ) = ( shift, shift );
+    croak q{not a class method} if ( not ref $self );
     if ( defined $debug_level ) {
-        $self->parameter('Debug') = $debug_level;
+        $self->parameter(q{Debug}) = $debug_level;
     }
-
-    return $self->parameter('Debug');
+    return $self->parameter(q{Debug});
 }
 
 sub _is_auth_supported_by_poco {
-    my $self             = shift;
-    my $requested_mehtod = shift;
-
-    for my $mechanism ( @{ $self->{'Auth_Mechanism'} } ) {
+    my ( $self, $requested_mehtod ) = ( shift, shift );
+    for my $mechanism ( @{ $self->{q{Auth_Mechanism}} } ) {
         if ( uc($requested_mehtod) eq $mechanism ) {
             return 1;
         }
@@ -843,22 +827,21 @@ sub _is_auth_supported_by_poco {
     return 0;
 }
 
+# encode the authentication string
 sub _encode_auth {
-    my $self      = shift;
-    my $mechanism = shift;
-    my $user      = shift;
-    my $pass      = shift;
+    my ( $self, $mechanism, $user, $pass ) = ( shift, shift, shift, shift );
     my $encoded_data;
 
-    if ( $mechanism eq 'PLAIN' ) {
+    if ( $mechanism eq q{PLAIN} ) {
         eval { require MIME::Base64 };
         if ($@) {
-            carp 'You need to install MIME::Base64 to use AUTH PLAIN!';
-            $encoded_data = 'I don\'t have MIME::Base64 installed';
+            carp q{You need to install MIME::Base64 to use AUTH PLAIN!};
+            $encoded_data = q{I don't have MIME::Base64 installed};
         }
         else {
             $encoded_data =
-              MIME::Base64::encode_base64( "\0" . $user . "\0" . $pass, q{} );
+              MIME::Base64::encode_base64( qq{\0} . $user . qq{\0} . $pass,
+                q{} );
         }
     }
     else {
@@ -872,9 +855,10 @@ sub _open_file {
     my $filename = shift;
     my $handle;
 
+    # does file exist and is readable?
     if ( -e $filename and -r $filename ) {
         $handle = gensym();
-        open $handle, q{<}, "$filename";
+        open $handle, q{<}, qq{$filename};
     }
     else {
         $handle = undef;
@@ -885,17 +869,16 @@ sub _open_file {
 
 # accessor/mutator
 sub _transaction_log {
-    my $self = shift;
-    my $log  = shift;
+    my ( $self, $log ) = ( shift, shift );
 
-    croak 'not a class method' if ( not ref $self );
+    croak q{not a class method} if ( not ref $self );
 
     if ( defined $log ) {
-        push @{ $self->{'transaction_log'} }, $log;
+        push @{ $self->{q{transaction_log}} }, $log;
         return $self;
     }
     else {
-        return $self->{'transaction_log'};
+        return $self->{q{transaction_log}};
     }
 }
 
@@ -913,7 +896,7 @@ POE::Component::Client::SMTP - Asynchronous mail sending with POE
 
 =head1 VERSION
 
-Version 0.17
+Version 0.18
 
 =head1 DESCRIPTION
 

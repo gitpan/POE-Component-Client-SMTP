@@ -1,33 +1,36 @@
-# Copyright (c) 2005 - 2007 George Nistorica
+# Copyright (c) 2005 - 2008 George Nistorica
 # All rights reserved.
 # This file is part of POE::Component::Client::SMTP
 # POE::Component::Client::SMTP free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.  See the LICENSE
 # file that comes with this distribution for more details.
 
+# 	$Id: Build.PL,v 1.7 2008/05/09 14:15:20 UltraDM Exp $
+
 use strict;
 use warnings;
 use Module::Build;
 
 my $builder = Module::Build->new(
-    module_name         => 'POE::Component::Client::SMTP',
-    license             => 'perl',
-    dist_author         => 'George Nistorica <ultadm@cpan.org>',
-    dist_version_from   => 'lib/POE/Component/Client/SMTP.pm',
-    requires => {
-        'Test::More'                => 0,
-        'Carp'                      => 0,
-        'Socket'                    => 0,
-        'Data::Dumper'              => 0,
-        'POE'                       => '0.26',
-        'POE::Wheel::SocketFactory' => 0,
-        'POE::Wheel::ReadWrite'     => 0,
-        'POE::Filter::Line'         => 0,
-        'POE::Filter::Stream'       => 0,
-        'Symbol'                    => 0,
+    q{module_name}       => q{POE::Component::Client::SMTP},
+    q{license}           => q{perl},
+    q{dist_author}       => q{George Nistorica <ultadm@cpan.org>},
+    q{dist_version_from} => q{lib/POE/Component/Client/SMTP.pm},
+    q{requires}          => {
+        q{Test::More}                     => 0,
+        q{Carp}                           => 0,
+        q{Socket}                         => 0,
+        q{Data::Dumper}                   => 0,
+        q{POE}                            => q{0.26},
+        q{POE::Wheel::SocketFactory}      => 0,
+        q{POE::Wheel::ReadWrite}          => 0,
+        q{POE::Filter::Line}              => 0,
+        q{POE::Filter::Stream}            => 0,
+        q{Symbol}                         => 0,
+        q{POE::Filter::Transparent::SMTP} => 0,
     },
-    add_to_cleanup      => [ 'POE-Component-Client-SMTP-*' ],
-    create_makefile_pl => 'traditional',
+    q{add_to_cleanup}     => [q{POE-Component-Client-SMTP-*}],
+    q{create_makefile_pl} => q{traditional},
 );
 
 $builder->create_build_script();

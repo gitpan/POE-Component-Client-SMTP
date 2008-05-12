@@ -24,6 +24,7 @@ t/045-messagefile-filehandle.t
 t/050-send-with-bcc-cc.t
 t/060-send-defaults.t
 t/070-test-error-return.t
+t/080-transparent.t
 t/pod-coverage.t
 t/pod.t
 t/email_message.txt

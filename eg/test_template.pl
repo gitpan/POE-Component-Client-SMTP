@@ -1,6 +1,6 @@
-#!/usr/bin/perl -w
+#!/usr/bin/env perl 
 
-# Copyright (c) 2005 - 2007 George Nistorica
+# Copyright (c) 2005 - 2008 George Nistorica
 # All rights reserved.
 # This file is part of POE::Component::Client::SMTP
 # POE::Component::Client::SMTP is free software; you can redistribute it and/or
@@ -8,6 +8,7 @@
 # file that comes with this distribution for more details.
 
 use strict;
+use warnings;
 
 use lib '../lib';
 use Test::More tests => 6;    # including use_ok
