@@ -135,8 +135,8 @@ EOB
 }
 
 sub error_handler {
-    print qq{Something nasty happened\n};
-    exit 100;
+    my ( $syscall_name, $error_number, $error_string ) = @_[ ARG0, ARG1, ARG2 ];
+    die qq{SYSCALL: $syscall_name, ERRNO: $error_number, ERRSTR: $error_string};
 }
 
 sub handle_client_input {

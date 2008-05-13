@@ -7,7 +7,7 @@
 # modify it under the same terms as Perl itself.  See the LICENSE
 # file that comes with this distribution for more details.
 
-# 	$Id: 020-send-using-all-params.t,v 1.4 2008/05/11 18:13:06 UltraDM Exp $
+# 	$Id: 020-send-using-all-params.t,v 1.5 2008/05/12 12:53:26 UltraDM Exp $
 
 use strict;
 use warnings;
@@ -142,8 +142,8 @@ EOB
 }
 
 sub error_handler {
-    carp q{Something nasty happened};
-    exit 100;
+    my ( $syscall_name, $error_number, $error_string ) = @_[ ARG0, ARG1, ARG2 ];
+    die qq{SYSCALL: $syscall_name, ERRNO: $error_number, ERRSTR: $error_string};
 }
 
 sub handle_client_input {

@@ -14,7 +14,7 @@ package POE::Component::Client::SMTP;
 use warnings;
 use strict;
 
-our $VERSION = q{0.19};
+our $VERSION = q{0.20};
 
 use Data::Dumper;
 use Carp;
@@ -896,7 +896,7 @@ POE::Component::Client::SMTP - Asynchronous mail sending with POE
 
 =head1 VERSION
 
-Version 0.18
+Version 0.20
 
 =head1 DESCRIPTION
 

@@ -1,4 +1,7 @@
 Revision history for POE-Component-Client-SMTP
+0.20	May 2008
+    * Fixed NetBSD failed test
+
 0.19	May 2008
     * Use POE::Filter::Transparent::SMTP for sending messages
 

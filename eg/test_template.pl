@@ -7,6 +7,8 @@
 # modify it under the same terms as Perl itself.  See the LICENSE
 # file that comes with this distribution for more details.
 
+# 	$Id: test_template.pl,v 1.3 2008/05/12 12:52:44 UltraDM Exp $	
+
 use strict;
 use warnings;
 

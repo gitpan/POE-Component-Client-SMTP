@@ -19,6 +19,7 @@ use Test::More tests => 2;
 
 diag(q{Testing SMTP Transparency});
 
+use Socket;
 use POE;
 use POE::Component::Server::TCP;
 use POE::Component::Client::SMTP;
@@ -48,13 +49,14 @@ my $email_body =
   . $to_be_translated_line
   . qq{Third line$EOL};
 
-my $tcp_srv_port    = 2525;
+my $tcp_srv_port    = 25252;
 my $tcp_srv_address = q{localhost};
 my $tcp_srv_alias   = q{TCP_SRV};
 
 POE::Component::Server::TCP->new(
     q{Port}                  => $tcp_srv_port,
     q{Address}               => $tcp_srv_address,
+    q{Domain}                => AF_INET,
     q{Alias}                 => $tcp_srv_alias,
     q{Error}                 => \&tcp_error_handler,
     q{ClientInput}           => \&handle_client_input,
@@ -92,7 +94,8 @@ sub _start {
 }
 
 sub tcp_error_handler {
-    warn q{Print something nasty has happened!};
+    my ( $syscall_name, $error_number, $error_string ) = @_[ ARG0, ARG1, ARG2 ];
+    die qq{SYSCALL: $syscall_name, ERRNO: $error_number, ERRSTR: $error_string};
 }
 
 sub handle_client_input {

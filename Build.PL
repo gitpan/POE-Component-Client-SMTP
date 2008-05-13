@@ -17,6 +17,7 @@ my $builder = Module::Build->new(
     q{dist_author}       => q{George Nistorica <ultadm@cpan.org>},
     q{dist_version_from} => q{lib/POE/Component/Client/SMTP.pm},
     q{requires}          => {
+        q{perl}                           => 0,
         q{Test::More}                     => 0,
         q{Carp}                           => 0,
         q{Socket}                         => 0,
