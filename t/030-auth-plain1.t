@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 
-# Copyright (c) 2007-2008 George Nistorica
+# Copyright (c) 2007-2009 George Nistorica
 # All rights reserved.
 # This file is part of POE::Component::Client::SMTP
 # POE::Component::Client::SMTP is free software; you can redistribute it and/or
@@ -9,7 +9,7 @@
 
 # Test PLAIN AUTH
 
-# 	$Id: 030-auth-plain1.t,v 1.2 2008/05/11 18:33:46 UltraDM Exp $	
+# 	$Id: 030-auth-plain1.t,v 1.3 2008/05/13 14:02:15 UltraDM Exp $	
 
 use strict;
 use warnings;

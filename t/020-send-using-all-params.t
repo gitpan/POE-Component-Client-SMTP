@@ -1,13 +1,13 @@
 #!/usr/bin/env perl
 
-# Copyright (c) 2005-2008 George Nistorica
+# Copyright (c) 2005-2009 George Nistorica
 # All rights reserved.
 # This file is part of POE::Component::Client::SMTP
 # POE::Component::Client::SMTP is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.  See the LICENSE
 # file that comes with this distribution for more details.
 
-# 	$Id: 020-send-using-all-params.t,v 1.5 2008/05/12 12:53:26 UltraDM Exp $
+# 	$Id: 020-send-using-all-params.t,v 1.6 2008/05/13 14:02:15 UltraDM Exp $
 
 use strict;
 use warnings;

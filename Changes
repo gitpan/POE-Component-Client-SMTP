@@ -1,4 +1,21 @@
 Revision history for POE-Component-Client-SMTP
+0.21  February 2009
+    * bug #39345 [Provide a consolidated error message]
+      Reported by: David Golden
+    * pococlsmtp was sending the error event to the caller
+      multiple times per SMTP transaction if it had things in the
+      queue to send to the server
+      Reported by: I lost the email, please send me the mail again!
+    * escaping single dot in the message body (slurped file or
+      message body as provided by the user)
+      Reported by: I lost the email, please send me the mail again!
+    * bug #39290 Document that From and To must be bare email addresses
+      documentation specifing the fact that To/From arguments
+      need to hold bare email addresses not RFC2822 email address
+      Reported by: David Golden
+    * Fix the bug when sending file content and receiving a server
+      answer
+
 0.20	May 2008
     * Fixed NetBSD failed test
 

@@ -5,3 +5,5 @@ the component, will stop when receiving "shutdown" event, cleaning up
 before going away
 
 2. Implement callbacks for server response
+
+3. Support FC2822 email address for To/From parameters

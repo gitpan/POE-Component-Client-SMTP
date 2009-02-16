@@ -2,14 +2,14 @@
 use strict;
 use warnings;
 
-# Copyright (c) 2006 - 2008 George Nistorica
+# Copyright (c) 2006 - 2009 George Nistorica
 # All rights reserved.
 # This file is part of POE::Component::Client::SMTP
 # POE::Component::Client::SMTP is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.  See the LICENSE
 # file that comes with this distribution for more details.
 
-# 	$Id: 070-test-error-return.t,v 1.3 2008/05/12 08:55:04 UltraDM Exp $
+# 	$Id: 070-test-error-return.t,v 1.4 2008/05/13 14:02:17 UltraDM Exp $
 
 use lib q{../lib};
 use Test::More;    # including use_ok

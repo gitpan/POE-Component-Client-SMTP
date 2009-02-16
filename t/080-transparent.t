@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 
 #################################################################################
-# Copyright (c) 2005-2008 George Nistorica				        #
+# Copyright (c) 2005-2009 George Nistorica				        #
 # All rights reserved.							        #
 # This file is part of POE::Component::Client::SMTP			        #
 # POE::Component::Client::SMTP is free software; you can redistribute it and/or #
@@ -9,7 +9,7 @@
 # file that comes with this distribution for more details.		        #
 #################################################################################
 
-# 	$Id: 080-transparent.t,v 1.2 2008/05/12 11:10:09 UltraDM Exp $
+# 	$Id: 080-transparent.t,v 1.3 2008/05/13 14:02:17 UltraDM Exp $
 
 use strict;
 use warnings;

@@ -7,7 +7,7 @@
 # modify it under the same terms as Perl itself.  See the LICENSE
 # file that comes with this distribution for more details.
 
-# 	$Id: 010-send-simple.t,v 1.5 2008/05/09 14:27:01 UltraDM Exp $
+# 	$Id: 010-send-simple.t,v 1.6 2008/05/13 14:02:14 UltraDM Exp $
 
 use strict;
 
@@ -85,7 +85,6 @@ POE::Session->create(
 POE::Kernel->run();
 
 is( $test, 1, q{Send Simple} );
-diag(q{Send Simple});
 
 sub start_session {
     $_[KERNEL]->yield(q{send_mail});

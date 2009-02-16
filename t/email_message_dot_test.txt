@@ -3,5 +3,8 @@ CC: Root <george@localhost>
 Bcc: Alter Ego <george.nistorica@localhost>
 From: Charlie Root <george@localhost>
 Subject: Email test
-
+first line
+second line
+.
+third line
 Ok ...

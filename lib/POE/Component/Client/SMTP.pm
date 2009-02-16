@@ -1,10 +1,10 @@
-# Copyright (c) 2005 - 2008 George Nistorica
+# Copyright (c) 2005 - 2009 George Nistorica
 # All rights reserved.
 # This program is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.  See the LICENSE
 # file that comes with this distribution for more details.
 
-# 	$Id: SMTP.pm,v 1.22 2008/05/12 12:21:09 UltraDM Exp $
+# 	$Id: SMTP.pm,v 1.24 2009/01/28 13:39:33 UltraDM Exp $
 
 package POE::Component::Client::SMTP;
 
@@ -14,17 +14,24 @@ package POE::Component::Client::SMTP;
 use warnings;
 use strict;
 
-our $VERSION = q{0.20};
+our $VERSION = q{0.21};
 
 use Data::Dumper;
 use Carp;
 use Socket;
 use Symbol qw( gensym );
-use POE
-  qw(Wheel::SocketFactory Wheel::ReadWrite Filter::Line Filter::Stream Filter::Transparent::SMTP);
+use POE;
+use POE::Wheel::SocketFactory;
+use POE::Wheel::ReadWrite;
+use POE::Filter::Line;
+use POE::Filter::Stream;
+use POE::Filter::Transparent::SMTP;
 
+# End of line as specified by SMTP RFC
 my $EOL = qq{\015\012};
 
+# an alias to _create currently
+# perhaps it could have dual behaviour in the future
 sub send {
     _create(@_);
     return 1;
@@ -39,10 +46,17 @@ sub _create {
     croak q{not an object method} if ( ref $class );
 
     # The actual Object;
+    # fill the PoCo parameter from the parameters we got and add the
+    # defaults where the parameters are not supplied
     my $self = bless _fill_data( \%parameters ), $class;
 
     # store the caller
     $self->parameter( q{Caller_Session}, $poe_kernel->get_active_session() );
+
+    # did we sent the callback event back?
+    # used so that the poco won't send multiple events for the same
+    # SMTP session
+    $self->parameter( q{message_sent}, 0 );
 
     # Spawn the PoCoClient::SMTP session
     POE::Session->create(
@@ -190,7 +204,8 @@ sub _pococlsmtp_conn_err {
 
     carp q{CURRENT STATE: _pococlsmtp_conn_err} if $self->debug;
 
-# send back to the caller the error which is generated during the connection establishing
+    # send back to the caller the error which is generated during the
+    # connection establishing
     $kernel->yield( q{return_failure},
         { q{POE::Wheel::SocketFactory} => [ @_[ ARG0 .. ARG3 ] ] } );
 
@@ -246,15 +261,25 @@ sub _pococlsmtp_input {
             # we're ok
             # and also stupid, don't know estmp, don't know 1XY codes
             $to_send = $self->command;
+
             if ( not defined $to_send ) {
 
-     # this is the end of the 'commands' we had stored for sending to the server
-                $kernel->post(
-                    $self->parameter(q{Caller_Session}),
-                    $self->parameter(q{SMTP_Success}),
-                    $self->parameter(q{Context}),
-                    $self->_transaction_log(),
-                );
+                # this is the end of the 'commands' we had stored for sending to
+                # the server
+                if ( not $self->parameter(q{message_sent}) ) {
+                    carp q{Sending SUCCESS event to the caller session}
+                      if $self->debug;
+
+                    # send callback only once
+                    $kernel->post(
+                        $self->parameter(q{Caller_Session}),
+                        $self->parameter(q{SMTP_Success}),
+                        $self->parameter(q{Context}),
+                        $self->_transaction_log(),
+                    );
+                }
+
+                $self->parameter( q{message_sent}, 1 );
                 $self->_smtp_component_destroy;
             }
             else {
@@ -262,18 +287,18 @@ sub _pococlsmtp_input {
                 if ( $self->parameter(q{TransactionLog}) ) {
                     $self->_transaction_log( q{-> } . $to_send );
                 }
-		$self->store_rw_wheel->put( $to_send );
+                $self->store_rw_wheel->put($to_send);
             }
         }
         elsif (
             $smtp_code =~ /
-                                ^(4|5)\d{2}$    # look for error codes (starting with 4 or 5)
+                         ^(4|5)\d{2}$    # look for error codes (starting with 4 or 5)
                                 /xo
           )
         {
             carp qq{Server Error! $input } if $self->debug;
 
-            # the server responder with 4XY or 5XY code;
+            # the server responded with 4XY or 5XY code;
             # while 4XY is temporary failure, 5XY is permanent
             # it's unclear to me whether PoCoClientSMTP should retry in case of
             # 4XY or the user should. In case is PoCoClientSMTP's job, then I
@@ -335,12 +360,33 @@ sub _smtp_timeout_handler {
 sub _pococlsmtp_return_error_event {
     my ( $kernel, $self, $arg, $session ) = @_[ KERNEL, OBJECT, ARG0, SESSION ];
     carp q{CURRENT STATE: _pococlsmtp_return_error_event} if $self->debug;
-    $kernel->post(
-        $self->parameter(q{Caller_Session}),
-        $self->parameter(q{SMTP_Failure}),
-        $self->parameter(q{Context}),
-        $arg, $self->_transaction_log,
-    );
+    my $error = $arg;
+
+    my $error_line = q{};
+    foreach my $key ( keys %{$error} ) {
+        $error_line .= $key . q{: };
+        my $value = $error->{$key};
+        if ( ref $value eq q{ARRAY} ) {
+            $error_line .= join( q{, }, @{$value} );
+        }
+        else {
+            $error_line .= $value;
+        }
+    }
+
+    # send the callback just once
+    if ( not $self->parameter(q{message_sent}) ) {
+        carp q{Sending FAIL event to the caller session} if $self->debug;
+        $kernel->post(
+            $self->parameter(q{Caller_Session}),
+            $self->parameter(q{SMTP_Failure}),
+            $self->parameter(q{Context}),
+            $arg,
+            $self->_transaction_log,
+            $error_line,
+        );
+    }
+    $self->parameter( q{message_sent}, 1 );
     $self->_smtp_component_destroy;
     return 1;
 }
@@ -469,7 +515,7 @@ sub delete_sf_wheel {
         return delete $self->{q{Wheel}}->{q{SF}}->{$wheel};
     }
     else {
-        return delete $self->{q{Wheel}}->{q{SF}};
+        my $sf_wheel = delete $self->{q{Wheel}}->{q{SF}};
     }
 }
 
@@ -577,9 +623,7 @@ sub _build_expected_states {
     }
 
     # "mail from" command
-    push @states, [ 250, 251 ],
-
-      $rcpt_to = \$self->parameter(q{To});
+    push @states, [ 250, 251 ], $rcpt_to = \$self->parameter(q{To});
 
     # "rcpt to" command
     if ( ref( ${$rcpt_to} ) =~ /SCALAR/io ) {
@@ -686,6 +730,13 @@ EOER
 
         # go to the next step, building the commands, now that we have
         # the Body filled with the file contents
+        # Escape single dots on a line
+        my $filter =
+          POE::Filter::Transparent::SMTP->new( q{EscapeSingleInputDot} => 1, );
+        my $lines = $self->parameter(q{Body});
+        $lines = $filter->get( [$lines] );
+        $lines = $filter->put($lines);
+        $self->parameter( q{Body}, join( q{}, @{$lines} ) );
         $kernel->yield(q{_build_commands});
     }
     else {
@@ -790,7 +841,9 @@ qq{ERROR: Method unsupported by Component version: $VERSION}
 
         # GRR
         # create the body
-        my $filter = POE::Filter::Transparent::SMTP->new();
+        # escape single dots on a line
+        my $filter =
+          POE::Filter::Transparent::SMTP->new( q{EscapeSingleInputDot} => 1, );
         my $data = $filter->get( [$body] );
         $data = $filter->put($data);
         $body = join( q{}, @{$data} );
@@ -896,7 +949,7 @@ POE::Component::Client::SMTP - Asynchronous mail sending with POE
 
 =head1 VERSION
 
-Version 0.20
+Version 0.21
 
 =head1 DESCRIPTION
 
@@ -924,7 +977,7 @@ A simple example:
      From    => 'foo@baz.com',
      To      => 'john@doe.net',
      Server  =>  'relay.mailer.net',
-     SMTP_Success    =>  'callback_event_for_success',
+     SMTP_Success   =>  'callback_event_for_success',
      SMTP_Failure    =>  'callback_event_for_failure',
  );
  # and you are all set ;-)
@@ -978,6 +1031,10 @@ This holds the sender's email address
 
 B<Defaults> to 'root@localhost', just don't ask why.
 
+B<Note:> that the email address has to be a bare email address
+(johndoe@example.com), not an RFC2822 email address ("John
+Q. Public" <john.q.public@example.com> (The EveryMan))
+
 =item To
 
 This holds a list of recipients. Note that To/CC/BCC fields are separated in
@@ -987,6 +1044,10 @@ component's too) there is no difference as who is To, who CC and who BCC.
 The bottom line is: be careful how you construct your email message.
 
 B<Defaults> to root@localhost', just don't ask why.
+
+B<Note:> that the email address has to be a bare email address
+(johndoe@example.com), not an RFC2822 email address ("John
+Q. Public" <john.q.public@example.com> (The EveryMan))
 
 =item Body
 
@@ -1159,6 +1220,11 @@ Note that it is possible the string sent to server may not arrive there
 
 ARG2 is undefined if TransactionLog is not enabled
 
+=item ARG3
+
+This contains a single line (scalar) describing the error. It's useful
+for displaying the error in SMTP clients using PoCo
+
 =back
 
 B<Defaults> to nothing. This means that the Component will not trigger any
@@ -1201,6 +1267,11 @@ RFC2821 L<POE> L<POE::Session>
 =over 8
 
 =item * Currently the Component sends only HELO to the server, except for when using Auth.
+
+=item * PoCo doesn't keep a list of expected responses from TCP
+server, which means that in case the Server is responding something
+during DATA transaction, the PoCo will hapily send the message. Please
+let me know if this is an issue for someone.
 
 =back
 

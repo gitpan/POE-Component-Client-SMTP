@@ -1,13 +1,13 @@
 #!/usr/bin/env perl
 
-# Copyright (c) 2005 - 2008 George Nistorica
+# Copyright (c) 2005 - 2009 George Nistorica
 # All rights reserved.
 # This file is part of POE::Component::Client::SMTP
 # POE::Component::Client::SMTP is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.  See the LICENSE
 # file that comes with this distribution for more details.
 
-# 	$Id: 040-transaction-log.t,v 1.2 2008/05/12 08:15:07 UltraDM Exp $
+# 	$Id: 040-transaction-log.t,v 1.3 2008/05/13 14:02:16 UltraDM Exp $
 
 use strict;
 

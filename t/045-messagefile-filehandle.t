@@ -1,13 +1,13 @@
 #!/usr/bin/env perl
 
-# Copyright (c) 2005 - 2008 George Nistorica
+# Copyright (c) 2005 - 2009 George Nistorica
 # All rights reserved.
 # This file is part of POE::Component::Client::SMTP
 # POE::Component::Client::SMTP is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.  See the LICENSE
 # file that comes with this distribution for more details.
 
-# 	$Id: 045-messagefile-filehandle.t,v 1.3 2008/05/12 11:20:29 UltraDM Exp $
+# 	$Id: 045-messagefile-filehandle.t,v 1.4 2008/05/13 14:02:16 UltraDM Exp $
 
 use strict;
 use warnings;
@@ -179,7 +179,7 @@ sub smtp_send_failure {
     print q{SMTP_Failure: ARG0, }, Dumper($arg0), qq{\nARG1, }, Dumper($arg1),
       qq{\n}
       if $debug;
-    fail( q{Unexpectedly got SMTP failure!} );
+    fail(q{Unexpectedly got SMTP failure!});
 }
 
 sub error_handler {
@@ -190,9 +190,9 @@ sub error_handler {
 sub handle_client_input {
     my ( $heap, $input ) = @_[ HEAP, ARG0 ];
     carp q{handle_client_input} if ( $debug == 2 );
-    my $client = $heap->{q{client}};
+    my $client      = $heap->{q{client}};
+    my $end_message = 0;
 
-    #    print qq{I: "$input"\n};
     if ( $input =~ /^(ehlo|helo|mail from:|rcpt to:|data|\.|quit)/io ) {
         if ( $input =~ /^(ehlo|helo)\s(\w+)/io ) {
             $heap->{q{test}}->{$client} = $2;
@@ -201,11 +201,18 @@ sub handle_client_input {
           ->put( shift @{ $heap->{q{smtp_server_responses}}->{$client} } );
     }
     elsif ( $input =~ /^$/ ) {
+        $heap->{q{client_message}}->{$client} .= qq{$input\n}
+          if ( not $end_message );
 
         # there are "empty lines coming in ...
     }
     else {
-        $heap->{q{client_message}}->{$client} .= qq{$input\n};
+
+        $heap->{q{client_message}}->{$client} .= qq{$input\n}
+          if ( not $end_message );
+        if ( $input =~ /ok/io ) {
+            $end_message = 1;
+        }
     }
 }
 
@@ -230,6 +237,7 @@ sub handle_client_error {
     my $heap   = $_[HEAP];
     my $client = $heap->{q{client}};
     delete $heap->{q{smtp_server_responses}}->{$client};
+    chomp $heap->{q{client_message}}->{$client};
     if ( $heap->{q{client_message}}->{$client} eq message_file() ) {
         $test{ $heap->{q{test}}->{$client} } = 1;
     }
@@ -237,7 +245,7 @@ sub handle_client_error {
         $test{ $heap->{q{test}}->{$client} } = 0;
         print qq{Not the same!\n};
     }
-    delete $heap->{q{client_messageq}}->{$client};
+    delete $heap->{q{client_message}}->{$client};
     carp q{handle_client_error} if ( $debug == 2 );
 }
 
