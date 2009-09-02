@@ -5,7 +5,7 @@
 # modify it under the same terms as Perl itself.  See the LICENSE
 # file that comes with this distribution for more details.
 
-# 	$Id: Build.PL,v 1.8 2008/05/13 14:02:14 UltraDM Exp $
+# 	$Id: Build.PL,v 1.9 2009/02/16 15:24:50 UltraDM Exp $
 
 use strict;
 use warnings;

@@ -9,7 +9,7 @@
 # file that comes with this distribution for more details.		        #
 #################################################################################
 
-# 	$Id: 080-transparent.t,v 1.3 2008/05/13 14:02:17 UltraDM Exp $
+# 	$Id: 080-transparent.t,v 1.4 2009/09/02 08:23:37 UltraDM Exp $
 
 use strict;
 use warnings;

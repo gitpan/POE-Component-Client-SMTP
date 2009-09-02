@@ -4,7 +4,7 @@
 # modify it under the same terms as Perl itself.  See the LICENSE
 # file that comes with this distribution for more details.
 
-# 	$Id: SMTP.pm,v 1.24 2009/01/28 13:39:33 UltraDM Exp $
+# 	$Id: SMTP.pm,v 1.25 2009/09/02 08:23:37 UltraDM Exp $
 
 package POE::Component::Client::SMTP;
 
@@ -14,7 +14,7 @@ package POE::Component::Client::SMTP;
 use warnings;
 use strict;
 
-our $VERSION = q{0.21};
+our $VERSION = q{0.22};
 
 use Data::Dumper;
 use Carp;
@@ -137,7 +137,7 @@ sub _pococlsmtp_default {
 # event: smtp_send
 sub _pococlsmtp_send {
     my ( $kernel, $self ) = @_[ KERNEL, OBJECT ];
-    my ( %options, $wheel );
+    my ( %options, $wheel, $alarm );
 
     carp q{CURRENT STATE: _pococlsmtp_send} if $self->debug;
 
@@ -158,6 +158,13 @@ sub _pococlsmtp_send {
             $options{$opt} = $self->parameter($opt);
         }
     }
+
+    # set the alarm for preventing timeouts
+    $alarm =
+      $kernel->delay_set( q{smtp_timeout_event}, $self->parameter(q{Timeout}) );
+
+    # store the alarm to be used when talking to the SMTP server
+    $self->_alarm($alarm);
 
     $wheel = POE::Wheel::SocketFactory->new( %options, );
 
@@ -949,7 +956,7 @@ POE::Component::Client::SMTP - Asynchronous mail sending with POE
 
 =head1 VERSION
 
-Version 0.21
+Version 0.22
 
 =head1 DESCRIPTION
 

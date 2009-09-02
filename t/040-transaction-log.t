@@ -7,7 +7,7 @@
 # modify it under the same terms as Perl itself.  See the LICENSE
 # file that comes with this distribution for more details.
 
-# 	$Id: 040-transaction-log.t,v 1.3 2008/05/13 14:02:16 UltraDM Exp $
+# 	$Id: 040-transaction-log.t,v 1.4 2009/09/02 08:23:37 UltraDM Exp $
 
 use strict;
 

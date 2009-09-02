@@ -1,4 +1,9 @@
 Revision history for POE-Component-Client-SMTP
+0.22  September 2009
+    * Applied a patch from Sergey V. Beduev so that Timeout is set
+      before creating the socket
+    * Added a test for the patch above
+
 0.21  February 2009
     * bug #39345 [Provide a consolidated error message]
       Reported by: David Golden

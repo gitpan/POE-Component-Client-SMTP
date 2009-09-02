@@ -19,6 +19,7 @@ t/015-receive-DATA-5XY-code.t
 t/017-unknown-code.t
 t/018-consolidated_error_message.t
 t/020-send-using-all-params.t
+t/025-timeout.t
 t/030-auth-plain1.t
 t/040-transaction-log.t
 t/045-messagefile-filehandle.t

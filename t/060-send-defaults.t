@@ -7,7 +7,7 @@
 # modify it under the same terms as Perl itself.  See the LICENSE
 # file that comes with this distribution for more details.
 
-# 	$Id: 060-send-defaults.t,v 1.5 2008/05/13 14:02:16 UltraDM Exp $
+# 	$Id: 060-send-defaults.t,v 1.6 2009/09/02 08:23:37 UltraDM Exp $
 
 # Test the defaults as stated in the lib POD
 # TODO:
